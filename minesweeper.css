@@ -1,0 +1,136 @@
+.minesweeper[data-upgraded="true"] {
+  --ms-cell-size: 24px;
+  box-sizing: border-box;
+  min-width: 100%;
+  align-items: stretch;
+  gap: 6px;
+  overflow: auto;
+  padding: 7px;
+}
+
+.minesweeper[data-size="beginner"] { --ms-cell-size: 26px; }
+.minesweeper[data-size="expert"] { --ms-cell-size: 20px; }
+
+.ms-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+}
+
+.ms-difficulty,
+.ms-mode {
+  min-height: 24px;
+  border: 0;
+  background: var(--face);
+  box-shadow: var(--out);
+  color: #111;
+  padding: 3px 8px;
+  font: 11px var(--font);
+}
+
+.ms-difficulty:active,
+.ms-difficulty[aria-pressed="true"],
+.ms-mode:active,
+.ms-mode[aria-pressed="true"] {
+  box-shadow: var(--pressed);
+  padding: 4px 7px 2px 9px;
+}
+
+.ms-difficulty[aria-pressed="true"] {
+  font-weight: 700;
+}
+
+.ms-mode {
+  margin-left: auto;
+}
+
+.minesweeper[data-upgraded="true"] .ms-header {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 7px 9px;
+}
+
+.minesweeper[data-upgraded="true"] .ms-lcd {
+  min-width: 58px;
+  font-size: 25px;
+  line-height: 29px;
+}
+
+.minesweeper[data-upgraded="true"] .ms-face {
+  width: 36px;
+  height: 36px;
+  font-size: 21px;
+}
+
+.minesweeper[data-upgraded="true"] .ms-grid-wrap {
+  width: 100%;
+  overflow: auto;
+  box-shadow: var(--in);
+  background: var(--face);
+}
+
+.minesweeper[data-upgraded="true"] .ms-grid {
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  box-shadow: none;
+  padding: 3px;
+  touch-action: manipulation;
+}
+
+.minesweeper[data-upgraded="true"] .ms-cell {
+  width: var(--ms-cell-size);
+  height: var(--ms-cell-size);
+  font-size: calc(var(--ms-cell-size) * .64);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.minesweeper[data-upgraded="true"] .ms-cell:focus-visible {
+  outline: 2px dotted #111;
+  outline-offset: -4px;
+}
+
+.minesweeper[data-upgraded="true"] .ms-cell.open {
+  background: #c0c0c0;
+}
+
+.minesweeper[data-upgraded="true"] .ms-cell.wrong-flag {
+  color: #111;
+  background: #ff9b9b;
+}
+
+.ms-status {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #7f9db9;
+  background: #fff;
+  padding: 3px 5px;
+  color: #222;
+  font: 11px var(--font);
+}
+
+.ms-status strong { font-weight: 700; }
+
+.minesweeper[data-upgraded="true"] .ms-hint {
+  margin: 0;
+  line-height: 1.25;
+}
+
+@media (max-width: 600px) {
+  .minesweeper[data-upgraded="true"] { --ms-cell-size: 23px; }
+  .minesweeper[data-size="expert"] { --ms-cell-size: 19px; }
+  .ms-difficulty,
+  .ms-mode { min-height: 28px; }
+  .ms-mode { margin-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minesweeper[data-upgraded="true"] * { scroll-behavior: auto !important; }
+}
