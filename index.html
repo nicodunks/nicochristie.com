@@ -9,19 +9,12 @@
 <link rel="apple-touch-icon" href="/assets/icons/cuba-flag-180.png">
 <style>
 h2 { font-size: 1.25em; margin-top: 2em; }
-.d { float: right; margin-left: 1em; color: #999; }
-.grain { position: fixed; inset: 0; z-index: 100000; pointer-events: none; opacity: .85; mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .45 0 0 0 0 .45 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 240px 240px; animation: grain .9s steps(1) infinite; }
-@keyframes grain {
-  0% { background-position: 0 0; } 12.5% { background-position: -83px 41px; } 25% { background-position: 57px -112px; }
-  37.5% { background-position: -131px -29px; } 50% { background-position: 96px 73px; } 62.5% { background-position: -17px 138px; }
-  75% { background-position: 149px -61px; } 87.5% { background-position: -104px 102px; } 100% { background-position: 0 0; }
-}
-@media (prefers-reduced-motion: reduce) { .grain { animation: none; } }
+ul { padding-left: 1.5em; }
+.d { float: right; margin-left: 1em; color: #999; white-space: nowrap; }
+@media (max-width: 600px) { body { font-size: 14px; } body > img { width: 112px; height: 112px; } }
 </style>
 </head>
-<body style="max-width: 760px; margin: 0 auto; padding: 24px 16px;">
+<body style="background: #fff; max-width: 760px; margin: 0 auto; padding: 24px 16px;">
 <img src="/assets/nico.jpg" alt="Nico Christie" width="140" height="140" style="margin-top: 24px;">
 <h1>Nico Christie</h1>
 
@@ -31,29 +24,28 @@ h2 { font-size: 1.25em; margin-top: 2em; }
 
 <h2>Exploring @ <a href="https://offpolicyinc.com" target="_blank" rel="noopener">Off Policy</a></h2>
 <ul>
-<li><a href="https://offpolicyinc.com/work/dragonslayer/" target="_blank" rel="noopener">DragonSlayer (Dictation to Radiology Report)</a> <span class="d">Oct 2026</span></li>
-<li><a href="https://offpolicyinc.com/work/claude-tennis-coach/" target="_blank" rel="noopener">Claude as a Tennis Coach</a> <span class="d">Oct 2026</span></li>
-<li><a href="https://offpolicyinc.com/work/wc3env/" target="_blank" rel="noopener">Warcraft III as an RL environment</a> <span class="d">Sep 2026</span></li>
-<li><a href="https://offpolicyinc.com/work/fast-weights/" target="_blank" rel="noopener">Fast-weight continual learning in a fly</a> <span class="d">Sep 2026</span></li>
-<!-- <li><a href="https://offpolicyinc.com/work/xbench/" target="_blank" rel="noopener">Xbench: Twitter Vibes as an AI Eval</a> <span class="d">Sep 2026</span></li> -->
+<li><span class="d">Oct 2026</span><a href="https://offpolicyinc.com/work/dragonslayer/" target="_blank" rel="noopener">DragonSlayer (Dictation to Radiology Report)</a></li>
+<li><span class="d">Oct 2026</span><a href="https://offpolicyinc.com/work/claude-tennis-coach/" target="_blank" rel="noopener">Claude as a Tennis Coach</a></li>
+<li><span class="d">Sep 2026</span><a href="https://offpolicyinc.com/work/wc3env/" target="_blank" rel="noopener">Warcraft III as an RL environment</a></li>
+<li><span class="d">Sep 2026</span><a href="https://offpolicyinc.com/work/fast-weights/" target="_blank" rel="noopener">Fast-weight continual learning in a fly</a></li>
+<!-- <li><span class="d">Sep 2026</span><a href="https://offpolicyinc.com/work/xbench/" target="_blank" rel="noopener">Xbench: Twitter Vibes as an AI Eval</a></li> -->
 </ul>
 
 <h2>Some Prior Work</h2>
 <ul>
-<li><a href="https://x.com/nicochristie/status/2076705839365378110" target="_blank" rel="noopener">Beating the Microsoft Excel world champion</a> <span class="d">Jul 2026</span></li>
-<li><a href="https://arxiv.org/abs/2606.29955" target="_blank" rel="noopener">SpreadsheetBench 2: Evaluating Agents on End-to-End Business Spreadsheet Workflows</a> <span class="d">Jun 2026</span></li>
-<!-- <li><a href="https://www.wsj.com/articles/the-ai-company-capitalizing-on-our-obsession-with-excel-adf19e09" target="_blank" rel="noopener">Wall Street Journal: The AI company capitalizing on our obsession with Excel</a> <span class="d">Aug 2025</span></li> -->
-<li><a href="https://x.com/nicochristie/status/1940440489972649989" target="_blank" rel="noopener">Shortcut, The Superhuman AI Excel Agent</a> <span class="d">Jul 2025</span></li>
-<li><a href="https://x.com/GuangyuRobert/status/1831006762184646829" target="_blank" rel="noopener">Project Sid: many-agent simulations toward AI civilization</a> <span class="d">Sep 2024</span></li>
-<li><a href="https://x.com/GuangyuRobert/status/1759736712627212791" target="_blank" rel="noopener">The first Minecraft AI Agent you can play with</a> <span class="d">Feb 2024</span></li>
+<li><span class="d">Jul 2026</span><a href="https://x.com/nicochristie/status/2076705839365378110" target="_blank" rel="noopener">Beating the Microsoft Excel world champion</a></li>
+<li><span class="d">Jun 2026</span><a href="https://arxiv.org/abs/2606.29955" target="_blank" rel="noopener">SpreadsheetBench 2: Evaluating Agents on End-to-End Business Spreadsheet Workflows</a></li>
+<!-- <li><span class="d">Aug 2025</span><a href="https://www.wsj.com/articles/the-ai-company-capitalizing-on-our-obsession-with-excel-adf19e09" target="_blank" rel="noopener">Wall Street Journal: The AI company capitalizing on our obsession with Excel</a></li> -->
+<li><span class="d">Jul 2025</span><a href="https://x.com/nicochristie/status/1940440489972649989" target="_blank" rel="noopener">Shortcut, The Superhuman AI Excel Agent</a></li>
+<li><span class="d">Sep 2024</span><a href="https://x.com/GuangyuRobert/status/1831006762184646829" target="_blank" rel="noopener">Project Sid: many-agent simulations toward AI civilization</a></li>
+<li><span class="d">Feb 2024</span><a href="https://x.com/GuangyuRobert/status/1759736712627212791" target="_blank" rel="noopener">The first Minecraft AI Agent you can play with</a></li>
 </ul>
 
 <h2>Before that</h2>
 <ul>
-<li>MIT MBA, but dropped out in my second year <span class="d">2022–2023</span></li>
-<li><a href="https://www.youtube.com/watch?v=res17FLLcPM" target="_blank" rel="noopener">5'8" Nico Christie jumps like Spud Webb</a> <span class="d">2009–2021</span></li>
-<li><a href="/how-i-learned-to-jump-higher-than-lebron-james.pdf" target="_blank" rel="noopener">How I Learned to Jump Higher Than LeBron James (PDF)</a> <span class="d">2017</span></li>
+<li><span class="d">2022–2023</span>MIT MBA, but dropped out in my second year</li>
+<li><span class="d">2009–2021</span><a href="https://www.youtube.com/watch?v=res17FLLcPM" target="_blank" rel="noopener">5'8" Nico Christie jumps like Spud Webb</a></li>
+<li><span class="d">2017</span><a href="/how-i-learned-to-jump-higher-than-lebron-james.pdf" target="_blank" rel="noopener">How I Learned to Jump Higher Than LeBron James (PDF)</a></li>
 </ul>
-<div class="grain" aria-hidden="true"></div>
 </body>
 </html>
