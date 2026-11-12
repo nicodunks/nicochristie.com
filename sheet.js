@@ -1,6 +1,7 @@
 // The homepage's sheet: the whole homepage is one sheet of paper that the visitor and a Claude agent both draw on.
-// The homepage's text is printed on the sheet. When the page opens, the agent greets the visitor with a drawing of
-// its own, and the visitor can draw back.
+// The homepage's text is printed on the sheet. When the page opens, the page draws one tiny greeting in the agent's
+// colour, picked at random, without asking the agent, so that it is there at once. When the visitor draws back,
+// the agent answers.
 //
 // The page loads this file as a module, with sheet.css. Nothing here stands in the way of reading the homepage:
 // the text shows first, links stay links, and when the bot check, the server or the agent fails, the homepage is
@@ -34,10 +35,11 @@
 // strokes too: the page writes each letter with the pen. Such a stroke also has `gap`, the distance between its
 // points. While the agent's turn lasts, the strokes of that turn are also `draft`, and are drawn faint.
 //
-// A reload wipes the ink, the agent's and the visitor's alike, and the agent greets the visitor again. The tab keeps
-// the sheet's id in sessionStorage, so a reload goes on with the same sheet on the server and starts no new one.
+// The visitor's sheet on the server is started at their first stroke, behind the bot check, so a visitor who only
+// reads costs nothing. A reload wipes the ink, the agent's and the visitor's alike, and the page greets again. The
+// tab keeps the sheet's id in sessionStorage, so a reload goes on with the same sheet on the server.
 import {apiUrl, challenge} from "./backend-client.js";
-import {COLORS, YOURS} from "./sheet-colors.js";
+import {COLORS, YOURS, MINE} from "./sheet-colors.js";
 
 // The agent's handwriting. For each character: w, how far the pen moves on after it, and d, its pen strokes as SVG
 // paths. In these paths a capital is 100 high, the line the letters stand on is at y = 100, and the tail of a g or
@@ -90,6 +92,10 @@ let fingers = new Map();   // every finger on the sheet, by its pointer's id, as
 let scrolling = false;     // the fingers on the sheet scroll the page: none of them draws
 let held = null;       // grip() as it was when the fingers last moved
 let sheet = null;      // the id of this visitor's sheet on the server, or null while there is none
+let opening = null;    // the promise of open(), once the sheet has been asked for
+let kept = false;      // the sheet's id came from sessionStorage, so the server may no longer have the sheet
+let dead = false;      // no sheet could be opened: the agent will not answer in this tab
+let greeted = null;    // the greeting the page drew that the agent has not been told of: {what, x, y, width, height}
 let busy = false;      // a turn is with the agent
 let soon = 0;          // the timer that sends the turn once the pen has rested
 let stopper = null;    // the AbortController of the turn's requests: Stop aborts them
@@ -390,6 +396,7 @@ addEventListener("pointerdown", e => {
     const tool = holds === "wipe" ? {wipe: WIPE} : {color: chosen, pen: PEN};
     stroke = {...tool, points: [at(e)], pointer: e.pointerId, kind: e.pointerType};
     stroke.ink = [stroke.points];
+    open();   // the sheet is asked for at the first stroke, and is there by the time the pen has rested
     ready();
     redraw();
   }
@@ -464,13 +471,13 @@ function undo() {
 // Sets which buttons are live. Send shows when the visitor has drawn, rubbed out or taken back something the agent
 // has not been told of. While a turn is with the agent, Send reads Stop.
 function ready() {
-  const news = sheet && (fresh.length || gone);
+  const news = !dead && (fresh.length || gone);
   send.textContent = busy ? "Stop" : "Send"; send.className = busy ? "stop" : "";
   send.hidden = !busy && !news;
   back.disabled = !mine.length;
   // the turn goes by itself once the pen has rested, when there are new marks for the agent
   clearTimeout(soon);
-  if (!busy && sheet && fresh.length && !stroke && !scrolling) { void send.offsetWidth; send.className = "soon"; soon = setTimeout(turn, REST); }
+  if (!busy && !dead && fresh.length && !stroke && !scrolling) { void send.offsetWidth; send.className = "soon"; soon = setTimeout(turn, REST); }
 }
 
 // ---- the agent's turn ----
@@ -653,8 +660,8 @@ async function reveal(m) {
 // Says beside the tools what the agent is doing, or nothing.
 function note(text) { caption.textContent = text; }
 
-// Sends the visitor's turn and carries out the agent's answer as it arrives. `arrived` is true for the turn that
-// opens the sheet, which has no marks: the agent greets the visitor.
+// Sends the visitor's turn and carries out the agent's answer as it arrives. The first turn after the page opened
+// also tells the agent which greeting the page drew.
 //
 // The answer comes in stretches. A stretch is the response to one request, and it ends when the agent's turn is
 // over or when the agent waits to see the sheet. For the agent to see the sheet, the page sends the pictures it
@@ -664,14 +671,17 @@ function note(text) { caption.textContent = text; }
 // revealed in order, one after the other. So the pictures the agent asks for have all its ink, however much of it
 // the visitor has seen. The turn is over once the last mark is revealed: the drafts turn solid. When anything
 // fails, the turn ends quietly, with the ink that arrived. Returns whether the agent's answer came through whole.
-async function turn(arrived = false) {
+async function turn() {
   busy = true; hurry = false; stopper = new AbortController();
-  const strokes = fresh.map(({color, wipe, points}) => ({color, wipe, points: simplify(points)}));
-  const body = {...picture(), strokes, lines: lines(), undone: gone, arrived, zoom};
-  for (const m of fresh) m.seen = true;
-  fresh = []; gone = 0;
   ready();
   note("thinking…");
+  await open();
+  if (!sheet) { note(""); busy = false; ready(); return false; }
+  const strokes = fresh.map(({color, wipe, points}) => ({color, wipe, points: simplify(points)}));
+  const body = {...picture(), strokes, lines: lines(), undone: gone, greeted, zoom};
+  for (const m of fresh) m.seen = true;
+  fresh = []; gone = 0; greeted = null;
+  ready();
   let drawing = Promise.resolve(), asked = [], over = false;
   const add = m => { marks.push(Object.assign(m, {draft: true, shown: 0})); added(m); grow(); drawing = drawing.then(() => reveal(m)); };
   const steps = {
@@ -686,10 +696,18 @@ async function turn(arrived = false) {
     doing: text => note(text + "…"),
     done: () => { over = true; },
   };
-  const address = `/api/sheets/${sheet}/`;
+  let address = `/api/sheets/${sheet}/`;
   try {
     for (let request = ["turns", body]; request;) {
-      const r = await post(address + request[0], request[1], stopper.signal);
+      let r = await post(address + request[0], request[1], stopper.signal);
+      if (kept && (r.status === 404 || r.status === 429)) {   // the kept sheet is gone or full: start a new one
+        kept = false; sheet = null; opening = null;
+        try { sessionStorage.removeItem(KEPT); } catch { /* storage is switched off */ }
+        await open();
+        if (!sheet) throw new Error("no sheet");
+        address = `/api/sheets/${sheet}/`;
+        r = await post(address + request[0], request[1], stopper.signal);
+      }
       if (!r.ok) throw new Error(`the server answered ${r.status}`);
       const reader = r.body.getReader(), text = new TextDecoder();
       let buf = "";
@@ -710,7 +728,7 @@ async function turn(arrived = false) {
     }
   } catch {
     // the agent may still be at work, or waiting to see the sheet: end its turn, so that it takes the next one
-    post(address + "stop", {}).catch(() => {});
+    if (sheet) post(address + "stop", {}).catch(() => {});
   }
   note("");
   await drawing;
@@ -726,19 +744,45 @@ function stop() { hurry = true; stopper.abort(); }
 
 // ---- opening the sheet ----
 
-// Opens the visitor's sheet, and has the agent greet them. A tab that has a sheet goes on with it. Otherwise, and
-// when that sheet no longer answers, the visitor passes the bot check, which never shows: a visitor Turnstile doubts
-// gets no sheet. The server then starts a sheet. When any of this fails there is no sheet, and the homepage is a
-// homepage without the agent.
-async function open() {
-  try { sheet = sessionStorage.getItem(KEPT); } catch { /* storage is switched off */ }
-  if (sheet && await turn(true)) return;
-  sheet = null;
-  const r = await post("/api/sheets", {token: await challenge("sheet", document.body, true)});
-  if (!r.ok) return;
-  sheet = (await r.json()).sheet;
-  try { sessionStorage.setItem(KEPT, sheet); } catch { /* storage is switched off */ }
-  await turn(true);
+// Opens the visitor's sheet on the server, once: later calls return the same promise. A tab that has a sheet goes on
+// with it. Otherwise the visitor passes the bot check, which never shows: a visitor Turnstile doubts gets no sheet.
+// The server then starts a sheet. When any of this fails there is no sheet, and the agent does not answer in this tab.
+function open() {
+  return opening ??= (async () => {
+    try { sheet = sessionStorage.getItem(KEPT); } catch { /* storage is switched off */ }
+    if (sheet) { kept = true; return; }
+    const r = await post("/api/sheets", {token: await challenge("sheet", document.body, true)});
+    if (!r.ok) throw new Error(`the server answered ${r.status}`);
+    sheet = (await r.json()).sheet;
+    try { sessionStorage.setItem(KEPT, sheet); } catch { /* storage is switched off */ }
+  })().catch(err => { dead = true; console.warn("No sheet:", err); });
+}
+
+// The greetings the page draws: for each, the SVG paths that draw it with its top left corner at (x, y), about 70
+// units high, and the tic-tac-toe board 120, so that its squares are large enough to play in. "hi" is written in
+// the agent's handwriting instead.
+const GREETINGS = {
+  face: (x, y) => [`M ${x + 4} ${y + 30} a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0`, `M ${x + 21} ${y + 21} l 0 5`,
+    `M ${x + 39} ${y + 21} l 0 5`, `M ${x + 17} ${y + 36} q 13 14 26 0`],
+  ball: (x, y) => [`M ${x + 4} ${y + 30} a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0`, `M ${x + 4} ${y + 30} l 52 0`,
+    `M ${x + 30} ${y + 4} l 0 52`, `M ${x + 12} ${y + 11} q 12 19 0 38`, `M ${x + 48} ${y + 11} q -12 19 0 38`],
+  board: (x, y) => [`M ${x + 40} ${y} l 0 120`, `M ${x + 80} ${y} l 0 120`, `M ${x} ${y + 40} l 120 0`, `M ${x} ${y + 80} l 120 0`],
+  hangman: (x, y) => [`M ${x} ${y + 66} l 40 0`, `M ${x + 20} ${y + 66} l 0 -66 l 34 0 l 0 12`,
+    ...[0, 1, 2, 3, 4].map(i => `M ${x + 72 + i * 22} ${y + 66} l 14 0`)],
+  hi: () => [],
+};
+
+// Draws one greeting, picked at random, in the agent's colour in the blank paper under the homepage's text, as if
+// by hand, and remembers it for the agent's first turn. No request is made.
+async function greet() {
+  const kinds = Object.keys(GREETINGS), what = kinds[Math.floor(Math.random() * kinds.length)];
+  const x = 40, y = column.offsetHeight + 24;
+  const strokes = what === "hi" ? written({text: "hi!", x, y: y + 10, width: 90, height: 44, color: MINE})
+    : GREETINGS[what](x, y).flatMap(d => runs(along(d))).map(points => ({color: MINE, points, pen: PEN}));
+  for (const m of strokes) { marks.push(Object.assign(m, {shown: 0, seen: true})); added(m); }
+  greeted = {what, x, y, width: {hangman: 180, board: 120}[what] ?? 90, height: what === "board" ? 120 : 70};
+  grow();
+  for (const m of strokes) await reveal(m);
 }
 
 addEventListener("resize", fit);
@@ -747,4 +791,4 @@ hold("pen");
 scale(zoom);
 fit();
 ready();
-open().catch(err => console.warn("No sheet:", err));
+greet();

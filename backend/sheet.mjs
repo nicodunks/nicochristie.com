@@ -3,7 +3,7 @@
 //
 //   POST /api/sheets                 a new sheet, {token}: the Turnstile token of the visitor. Returns {sheet: its id}
 //   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, undone,
-//                                    arrived, zoom}
+//                                    greeted, zoom}
 //   POST /api/sheets/<sheet>/looks   the parts of the sheet the agent asked to see, {looks: [{id, picture, left,
 //                                    right, top, bottom}]}
 //   POST /api/sheets/<sheet>/stop    ends the agent's turn, whatever the agent is doing
@@ -37,6 +37,14 @@ const SHEET = /^\/api\/sheets\/([0-9a-f-]{36})\/(turns|looks|stop)$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const DOING = {draw: "drawing", handwrite: "writing", erase: "erasing", move: "moving", zoom: "zooming"};   // what the page shows
 const SIDES = Object.keys(BOX);
+// The greetings the page draws by itself when the homepage opens, in the agent's colour, as the agent is told of them.
+const GREETINGS = {
+  face: "a happy face",
+  ball: "a ball",
+  board: "an empty tic-tac-toe board",
+  hangman: "a hangman's gallows with five blanks beside it, for a five-letter word that you choose now and keep to",
+  hi: 'the word "hi!"',
+};
 
 const number = v => typeof v === "number" && Number.isFinite(v);
 const line = o => JSON.stringify(o) + "\n";
@@ -44,7 +52,10 @@ const line = o => JSON.stringify(o) + "\n";
 // Returns the visitor's turn in words for the agent: what the picture shows, the homepage's text, and each new stroke.
 export function told(turn) {
   const n = v => v.toFixed(0);
-  const lines = turn.arrived ? ["A visitor has just opened the homepage, or opened it again. The sheet has no ink on it. Greet them."] : [];
+  const g = turn.greeted, lines = [];
+  if (g) lines.push("The visitor has just opened the homepage, or opened it again, which wiped the sheet clean. " +
+    `The page greeted them for you with ${GREETINGS[g.what]}, in your colour, in the box from x = ${n(g.x)} to ${n(g.x + g.width)} ` +
+    `and y = ${n(g.y)} to ${n(g.y + g.height)}. It is your ink. This is the first thing they drew back.`);
   if (turn.undone) lines.push(`The visitor took back ${turn.undone} of their strokes that you saw before.`);
   lines.push(`The picture shows the sheet from x = ${n(turn.left)} to x = ${n(turn.right)} and from y = ${n(turn.top)} to y = ${n(turn.bottom)}.`);
   lines.push(`The visitor's view is at zoom ${(turn.zoom ?? 1).toFixed(2)}.`, "");
@@ -163,6 +174,7 @@ function checked(turn, fail) {
   const text = l => l && typeof l === "object" && SIDES.every(k => number(l[k])) && typeof l.text === "string" && l.text.length <= 400;
   if (!Array.isArray(turn.strokes) || turn.strokes.length > 400 || !turn.strokes.every(stroke)) fail(400, "Invalid strokes.");
   if (!Array.isArray(turn.lines) || turn.lines.length > 300 || !turn.lines.every(text)) fail(400, "Invalid text.");
+  if (turn.greeted != null && !(SIDES.every(k => number(turn.greeted[k])) && Object.hasOwn(GREETINGS, turn.greeted.what))) fail(400, "Invalid turn.");
   if (turn.zoom !== undefined && !(number(turn.zoom) && turn.zoom > 0)) fail(400, "Invalid turn.");
   if (turn.undone !== undefined && !(Number.isInteger(turn.undone) && turn.undone >= 0)) fail(400, "Invalid turn.");
 }
