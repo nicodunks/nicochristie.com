@@ -17,7 +17,7 @@ The local preview and the future GitHub Pages frontend use the API URL in `../ba
 
 ## The homepage's sheet
 
-The homepage is one sheet of paper that the visitor and a Claude agent both draw on. When the homepage opens, the page itself draws one tiny greeting in the agent's colour, picked at random, with no request to anyone. When the visitor draws back, the agent answers. `../sheet.js` is the page's side, `sheet.mjs` is the Worker's side, and `agent.mjs` holds the agent's model, prompt and tools.
+The homepage is one sheet of paper that the visitor and a Claude agent both draw on. When the homepage opens, the page itself draws a small happy face in a colour picked at random, with no request to anyone. When the visitor draws back, the agent answers. `../sheet.js` is the page's side, `sheet.mjs` is the Worker's side, and `agent.mjs` holds the agent's model, prompt and tools.
 
 - Each visitor's sheet is one session of a Claude Managed Agent, started by `POST /api/sheets` at the visitor's first stroke, so a visitor who only reads costs nothing. The session's id stays in the database and never reaches the browser, which gets a random sheet id instead.
 - A new sheet needs a Turnstile token with the action `sheet`. The widget never shows: a visitor Turnstile would stop to question gets no sheet instead. When the check, the Worker or the agent fails, the homepage is a plain homepage without ink.

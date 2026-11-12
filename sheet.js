@@ -1,7 +1,7 @@
 // The homepage's sheet: the whole homepage is one sheet of paper that the visitor and a Claude agent both draw on.
-// The homepage's text is printed on the sheet. When the page opens, the page draws one tiny greeting in the agent's
-// colour, picked at random, without asking the agent, so that it is there at once. When the visitor draws back,
-// the agent answers.
+// The homepage's text is printed on the sheet. When the page opens, the page draws a small happy face in a colour
+// picked at random, without asking the agent, so that it is there at once. When the visitor draws back, the agent
+// answers.
 //
 // The page loads this file as a module, with sheet.css. Nothing here stands in the way of reading the homepage:
 // the text shows first, links stay links, and when the bot check, the server or the agent fails, the homepage is
@@ -39,7 +39,7 @@
 // reads costs nothing. A reload wipes the ink, the agent's and the visitor's alike, and the page greets again. The
 // tab keeps the sheet's id in sessionStorage, so a reload goes on with the same sheet on the server.
 import {apiUrl, challenge} from "./backend-client.js";
-import {COLORS, YOURS, MINE} from "./sheet-colors.js";
+import {COLORS, YOURS} from "./sheet-colors.js";
 
 // The agent's handwriting. For each character: w, how far the pen moves on after it, and d, its pen strokes as SVG
 // paths. In these paths a capital is 100 high, the line the letters stand on is at y = 100, and the tail of a g or
@@ -93,7 +93,7 @@ let sheet = null;      // the id of this visitor's sheet on the server, or null 
 let opening = null;    // the promise of open(), once the sheet has been asked for
 let kept = false;      // the sheet's id came from sessionStorage, so the server may no longer have the sheet
 let dead = false;      // no sheet could be opened: the agent will not answer in this tab
-let greeted = null;    // the greeting the page drew that the agent has not been told of: {what, x, y, width, height}
+let greeted = null;    // the greeting the page drew that the agent has not been told of: {color, x, y, width, height}
 let busy = false;      // a turn is with the agent
 let soon = 0;          // the timer that sends the turn once the pen has rested
 let stopper = null;    // the AbortController of the turn's requests: Stop aborts them
@@ -756,29 +756,16 @@ function open() {
   })().catch(err => { dead = true; console.warn("No sheet:", err); });
 }
 
-// The greetings the page draws: for each, the SVG paths that draw it with its top left corner at (x, y), about 70
-// units high, and the tic-tac-toe board 120, so that its squares are large enough to play in. "hi" is written in
-// the agent's handwriting instead.
-const GREETINGS = {
-  face: (x, y) => [`M ${x + 4} ${y + 30} a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0`, `M ${x + 21} ${y + 21} l 0 5`,
-    `M ${x + 39} ${y + 21} l 0 5`, `M ${x + 17} ${y + 36} q 13 14 26 0`],
-  ball: (x, y) => [`M ${x + 4} ${y + 30} a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0`, `M ${x + 4} ${y + 30} l 52 0`,
-    `M ${x + 30} ${y + 4} l 0 52`, `M ${x + 12} ${y + 11} q 12 19 0 38`, `M ${x + 48} ${y + 11} q -12 19 0 38`],
-  board: (x, y) => [`M ${x + 40} ${y} l 0 120`, `M ${x + 80} ${y} l 0 120`, `M ${x} ${y + 40} l 120 0`, `M ${x} ${y + 80} l 120 0`],
-  hangman: (x, y) => [`M ${x} ${y + 66} l 40 0`, `M ${x + 20} ${y + 66} l 0 -66 l 34 0 l 0 12`,
-    ...[0, 1, 2, 3, 4].map(i => `M ${x + 72 + i * 22} ${y + 66} l 14 0`)],
-  hi: () => [],
-};
-
-// Draws one greeting, picked at random, in the agent's colour in the blank paper under the homepage's text, as if
-// by hand, and remembers it for the agent's first turn. No request is made.
+// Draws the greeting, a happy face about 60 units high, in a bright pen colour picked at random, in the blank paper under
+// the homepage's text, as if by hand, and remembers it for the agent's first turn. No request is made.
 async function greet() {
-  const kinds = Object.keys(GREETINGS), what = kinds[Math.floor(Math.random() * kinds.length)];
+  const colors = Object.keys(COLORS).filter(c => c !== YOURS && c !== "gray"), color = colors[Math.floor(Math.random() * colors.length)];
   const x = 40, y = column.offsetHeight + 24;
-  const strokes = what === "hi" ? written({text: "hi!", x, y: y + 10, width: 90, height: 44, color: MINE})
-    : GREETINGS[what](x, y).flatMap(d => runs(along(d))).map(points => ({color: MINE, points, pen: PEN}));
+  const face = [`M ${x + 4} ${y + 30} a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0`, `M ${x + 21} ${y + 21} l 0 5`,
+    `M ${x + 39} ${y + 21} l 0 5`, `M ${x + 17} ${y + 36} q 13 14 26 0`];
+  const strokes = face.flatMap(d => runs(along(d))).map(points => ({color, points, pen: PEN}));
   for (const m of strokes) { marks.push(Object.assign(m, {shown: 0, seen: true})); added(m); }
-  greeted = {what, x, y, width: {hangman: 180, board: 120}[what] ?? 90, height: what === "board" ? 120 : 70};
+  greeted = {color, x, y, width: 60, height: 60};
   grow();
   for (const m of strokes) await reveal(m);
 }

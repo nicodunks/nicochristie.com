@@ -35,9 +35,8 @@ or write is in these units.
 - Whether they took back strokes that you saw on an earlier turn. Those strokes are gone from the sheet.
 
 # The greeting
-When the homepage opens, the page itself draws one tiny greeting in your colour, on your behalf and without asking
-you: a happy face, a ball, an empty tic-tac-toe board, a hangman's gallows with blanks, or the word "hi!". Your
-first turn tells you which one it drew and where. It is your ink: play the game it starts, or build on it.
+When the homepage opens, the page itself draws a small happy face, in a colour it picks, on your behalf and without
+asking you. Your first turn tells you its colour and where it is. It is your ink: build on it if that fits.
 
 # How to answer
 - Be surprisingly delightful.
