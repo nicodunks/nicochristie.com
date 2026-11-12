@@ -17,7 +17,8 @@
 //   {"erase": [{"x", "y", "width", "height"}, ...]} boxes to rub out
 //   {"move": {"box", "steps", "seconds"}}           ink to move through steps, each {dx, dy, scale, rotate}
 //   {"zoom": number}                                the zoom to bring the visitor's view to, in pixels per unit
-//   {"scroll": number}                              the y to bring to the top of the visitor's view
+//   {"scroll": {"x", "y"}}                          the x to bring to the left edge of the visitor's view and the y
+//                                                   to bring to its top; one of the two may be left out
 //   {"look": {"id", "y"}}                           the agent asks to see the sheet from y down, or what the visitor
 //                                                   sees if y is null. After the stretch, the page sends every
 //                                                   picture asked for in it as one request to looks, and the
@@ -82,7 +83,10 @@ export function ink(name, given) {
   if (name === "handwrite" && Array.isArray(given.texts) && given.texts.every(t => boxed(t) && typeof t.text === "string" && color(t)))
     return {write: given.texts.map(t => ({...box(t), text: t.text, color: color(t)}))};
   if (name === "erase" && Array.isArray(given.boxes) && given.boxes.every(boxed)) return {erase: given.boxes.map(box)};
-  if (name === "scroll" && number(given.y)) return {scroll: Math.min(100_000, Math.max(0, given.y))};
+  if (name === "scroll" && (number(given.x) || number(given.y)) && [given.x, given.y].every(v => v === undefined || number(v))) {
+    const within = v => Math.min(100_000, Math.max(-100_000, v));
+    return {scroll: {...(number(given.x) && {x: within(given.x)}), ...(number(given.y) && {y: Math.max(0, within(given.y))})}};
+  }
   if (name === "zoom" && number(given.zoom)) return {zoom: Math.min(1, Math.max(0.2, given.zoom))};
   const steps = given.steps;
   if (name === "move" && boxed(given) && number(given.seconds) && Array.isArray(steps) && steps.length

@@ -5,7 +5,6 @@
 // but drawing on the homepage.
 import {COLORS, YOURS, MINE} from "../sheet-colors.js";
 
-export const GRID = 100;   // the agent's picture of the page has a labelled grid line every this many units
 export const MODEL = {id: "claude-sonnet-5-5", effort: "low"};   // low effort answers fastest
 
 export const PROMPT = `You live on Nico Christie's personal homepage. The homepage is one sheet of paper: its text is
@@ -22,8 +21,9 @@ or write is in these units.
 # What you get each turn
 - A picture of the part of the sheet the visitor is looking at, with the homepage's text and every stroke in its
   own colour. The visitor's pen is ${YOURS} unless they pick another colour, and yours is ${MINE} unless you choose
-  another. The picture has a faint grid line every ${GRID} units, labelled with its coordinate along the top and
-  left edges. The grid is only in your picture.
+  another. The picture shows exactly what the visitor sees, no more and no less. It has a faint grid, labelled
+  with its coordinate along the top and left edges: a line every 100 units, or further apart when the visitor is
+  zoomed far out and the picture is scaled down to fit. The grid is only in your picture.
 - Which part of the sheet the picture shows, as the x of its left and right edges and the y of its top and bottom
   edges, and the zoom of the visitor's view. A phone opens zoomed out, because its screen is small.
 - The visitor's tools cover the bottom right corner of what they see, about 220 units wide and 70 high at zoom 1,
@@ -58,7 +58,7 @@ asking you. Your first turn tells you its colour and where it is. It is your ink
 - Write small and write little. Ordinary writing is a box 22 high. A few words answer most things.
 - Erase when the visitor asks you to, and when ink is wrong or in the way of what you are about to draw.
 - Make room when you need it. When the blank paper in the picture is too small for what you want to draw, call
-  zoom to zoom the visitor's view out, or scroll to take them down to blank paper, then look, and draw in the room
+  zoom to zoom the visitor's view out, or scroll to take them to blank paper in any direction, then look, and draw in the room
   that opened up. Do not zoom or scroll for a few words.
 - Make space by moving ink too. move selects all the ink in a box, theirs or yours, and shifts it, shrinks it or
   turns it. Before you respond, you can select ink that is in the way and shrink it or slide it aside.
@@ -198,14 +198,17 @@ export const TOOLS = [
     type: "custom",
     name: "scroll",
     description:
-      "Scroll the visitor's view down or up the sheet, gliding: y becomes the top edge of what they see. The sheet " +
-      "has no bottom, so there is always blank paper further down. Use it to take the visitor to ink they cannot " +
-      "see, or to fresh paper. The view moves only up and down, never sideways. After scroll, call look, which " +
-      "shows the new part in sight. The visitor scrolls too, so scroll only when it helps them.",
+      "Move the visitor's view over the sheet, gliding, in any direction: x becomes the left edge of what they " +
+      "see, and y the top edge. Give one or both. The sheet has no bottom and no sides, so there is always blank " +
+      "paper further on. Use it to take the visitor to ink they cannot see, or to fresh paper, or to move the " +
+      "homepage aside. After scroll, call look, which shows the new part in sight. The visitor moves their view " +
+      "too, so move it only when that helps them.",
     input_schema: {
       type: "object",
-      properties: {y: {type: "number", description: "The y to bring to the top edge of the view; 0 is the top of the homepage."}},
-      required: ["y"],
+      properties: {
+        x: {type: "number", description: "The x to bring to the left edge of the view; 0 is the left edge of the column of text."},
+        y: {type: "number", description: "The y to bring to the top edge of the view; 0 is the top of the homepage."},
+      },
     },
   },
   {

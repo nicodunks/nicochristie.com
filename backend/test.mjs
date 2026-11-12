@@ -7,7 +7,7 @@ import worker,{makePng} from './worker.mjs';
 import {ink} from './sheet.mjs';
 const origin='https://nicochristie.com';
 function fixture(){
- const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0003_sheets.sql',import.meta.url),'utf8'));
+ const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0003_sheets.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0004_sheet_cap.sql',import.meta.url),'utf8'));
  const DB={prepare(query){const stmt=sql.prepare(query);let args=[];return {bind(...values){args=values.map(x=>x instanceof ArrayBuffer?new Uint8Array(x):x);return this;},async first(){return stmt.get(...args)||null},async all(){return {results:stmt.all(...args)}},async run(){return stmt.run(...args)}}}};
  const env={DB,ALLOWED_ORIGINS:origin+',http://127.0.0.1:8765',IP_SECRET:'test-only-secret',TURNSTILE_SECRET:'test-secret',TURNSTILE_SITEKEY:'test-sitekey',POST_LIMIT:{limit:async()=>({success:true})},VISIT_LIMIT:{limit:async()=>({success:true})},SHEET_LIMIT:{limit:async()=>({success:true})},SHEET_AGENT:'agent_test',SHEET_ENVIRONMENT:'env_test',SHEET_CENTS:'25'};
  const request=(path,data,extra={})=>worker.fetch(new Request('https://api.example'+path,{method:data?'POST':'GET',headers:{origin,'content-type':'application/json','cf-connecting-ip':'192.0.2.1',...extra},body:data?JSON.stringify(data):undefined}),env);
@@ -77,8 +77,8 @@ test('a new sheet needs the bot check, gets a capped session, and keeps the sess
 });
 test('the database caps the sheets one connection starts in a day',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
- for(let i=0;i<8;i++)assert.equal((await request('/api/sheets',{token:'ok'})).status,201);
- assert.equal((await request('/api/sheets',{token:'ok'})).status,429);assert.equal(env.CLAUDE.made.length,8);
+ for(let i=0;i<30;i++)assert.equal((await request('/api/sheets',{token:'ok'})).status,201);
+ assert.equal((await request('/api/sheets',{token:'ok'})).status,429);assert.equal(env.CLAUDE.made.length,30);
 });
 test('a turn streams the agent\'s ink, drops malformed calls, and ends the turn once ink is on the sheet',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();
@@ -106,6 +106,6 @@ test('a turn is refused when malformed, and a sheet takes a bounded number of tu
  assert.equal((await request('/api/sheets/'+sheet+'/stop',{})).status,200);assert.equal(env.CLAUDE.sent.at(-1).type,'user.interrupt');
 });
 test('the agent scrolls and zooms the view within bounds',()=>{
- assert.deepEqual(ink('scroll',{y:640}),{scroll:640});assert.deepEqual(ink('scroll',{y:-50}),{scroll:0});assert.equal(ink('scroll',{y:'down'}),null);
+ assert.deepEqual(ink('scroll',{y:640}),{scroll:{y:640}});assert.deepEqual(ink('scroll',{x:-300,y:-50}),{scroll:{x:-300,y:0}});assert.equal(ink('scroll',{y:'down'}),null);assert.equal(ink('scroll',{}),null);
  assert.deepEqual(ink('zoom',{zoom:0.01}),{zoom:0.2});assert.deepEqual(ink('zoom',{zoom:5}),{zoom:1});
 });

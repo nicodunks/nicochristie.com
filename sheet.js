@@ -24,7 +24,8 @@
 // The sheet zooms: the homepage's text and the ink grow and shrink together, and zoomed out there is more blank
 // paper in the window to draw on. The page opens zoomed out, to the zoom sheet.css gives #page, which is further out
 // on a phone. The visitor zooms with two fingers while they hold the pen, and the agent zooms with its zoom tool.
-// The agent can also scroll the visitor's view down or up the sheet, with its scroll tool.
+// The agent can also move the visitor's view over the sheet in any direction, with its scroll tool: down and up
+// the window scrolls, and sideways the page itself is moved, as it is when the visitor moves two fingers sideways.
 //
 // One page unit is one CSS pixel at zoom 1. The point (0, 0) is the top left corner of the page's column, <main>,
 // so that the ink stays on its text when the window is widened; x is below 0 in the left margin, and y grows
@@ -47,8 +48,8 @@
 // points. While the agent's turn lasts, the strokes of that turn are also `draft`, and are drawn faint.
 //
 // The visitor's sheet on the server is started at their first stroke, behind the bot check, so a visitor who only
-// reads costs nothing. A reload wipes the ink, the agent's and the visitor's alike, and the page greets again. The
-// tab keeps the sheet's id in sessionStorage, so a reload goes on with the same sheet on the server.
+// reads costs nothing. A reload wipes the ink, the agent's and the visitor's alike, the page greets again, and the
+// next stroke starts a new sheet, so that a reload always talks to the agent as it is now.
 import {apiUrl, challenge} from "./backend-client.js";
 import {COLORS, YOURS} from "./sheet-colors.js";
 
@@ -62,14 +63,13 @@ const NAMES = {alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε",
   sum: "∑", prod: "∏", int: "∫", infty: "∞", le: "≤", leq: "≤", ge: "≥", geq: "≥", ne: "≠", neq: "≠", approx: "≈",
   pm: "±", cdot: "·", times: "×", div: "÷", to: "→", rightarrow: "→", leftarrow: "←", partial: "∂", nabla: "∇",
   in: "∈", ldots: "...", dots: "...", cdots: "...", quad: "  "};
-const GRID = 100;      // the agent's picture has a labelled grid line every this many units
+const GRID = 100;      // the agent's picture has a labelled grid line every this many units, at full size
 const DRAFT = 0.4;     // how solid the agent's ink is while its turn lasts
 const SPEED = 900;     // how fast the agent's ink appears, in page units a second
 const PEN = 3;         // the width of the visitor's pen, and of the agent's when it names none
 const WIPE = 24;       // the width of the visitor's eraser
 const REST = 1500;     // how long the pen rests, in milliseconds, before the turn goes by itself
 const FAR = 0.2;       // the furthest out the sheet zooms
-const KEPT = "sheet-id";   // the key in sessionStorage under which this tab's sheet id is kept
 
 // ---- the page's own elements ----
 
@@ -104,7 +104,6 @@ let scrolling = false;     // the fingers on the sheet scroll the page: none of 
 let held = null;       // grip() as it was when the fingers last moved
 let sheet = null;      // the id of this visitor's sheet on the server, or null while there is none
 let opening = null;    // the promise of open(), once the sheet has been asked for
-let kept = false;      // the sheet's id came from sessionStorage, so the server may no longer have the sheet
 let dead = false;      // no sheet could be opened: the agent will not answer in this tab
 let greeted = null;    // the greeting the page drew that the agent has not been told of: {color, x, y, width, height}
 let busy = false;      // a turn is with the agent
@@ -116,6 +115,8 @@ let zoom = new DOMMatrix(getComputedStyle(page).transform).a;   // screen pixels
 // the zoom the page opens at, so that zooming the page out on a phone does not thin the ink, and a third thicker
 // again on a phone, where a finger hides a thin line.
 const THICK = (innerWidth < 600 ? 1.3 : 1) / zoom;
+let taken = 0;         // how long the page must be, in screen pixels, to hold where the agent last scrolled the view
+let pan = 0;           // how far the page is moved to the left, in screen pixels: the sheet has no sideways scroll bar
 let left = 0;          // the x of the left edge of what the visitor sees
 let above = 0;         // the y of the top edge of what the visitor sees
 let wide = 0;          // how much of the sheet the visitor sees, as a width in page units
@@ -282,21 +283,26 @@ function fit() {
 }
 
 // Makes the page long enough to scroll to the lowest ink, when ink goes below the homepage's own text, and never
-// shorter than where the visitor is now.
+// shorter than where the visitor is now or where the agent last took them.
 function grow() {
   const low = made.reduce((y, m) => Math.max(y, reach(m).y1), 0) + 120;
   const top = column.getBoundingClientRect().top + scrollY;   // where the column starts, down the page
-  document.body.style.minHeight = Math.max(top + low * zoom, scrollY + innerHeight) + "px";
+  document.body.style.minHeight = Math.max(top + low * zoom, scrollY + innerHeight, taken) + "px";
 }
 
-// Scrolls the visitor's view so that y on the sheet is at the top of the window, gliding there over a third of a
-// second, after making the page long enough to go there. Resolves when the view is there.
-async function travel(y) {
-  const top = column.getBoundingClientRect().top + scrollY, to = top + Math.max(0, y) * zoom, from = scrollY;
-  document.body.style.minHeight = Math.max(parseFloat(document.body.style.minHeight) || 0, to + innerHeight) + "px";
+// Moves the visitor's view so that x on the sheet is at the left edge of the window and y at the top, gliding there
+// over a third of a second; an edge that is not given stays where it is. Down and up, the window scrolls, after the
+// page is made long enough to go there. Sideways, the page itself is moved. Resolves when the view is there.
+async function travel({x, y}) {
+  const top = column.getBoundingClientRect().top + scrollY, from = {pan, y: scrollY};
+  const to = {pan: x === undefined ? pan : pan + (x - left) * zoom, y: y === undefined ? scrollY : top + Math.max(0, y) * zoom};
+  taken = Math.max(taken, to.y + innerHeight);
+  grow();
   for (const t0 = performance.now(); ;) {
-    const k = hurry ? 1 : Math.min(1, (performance.now() - t0) / 350);
-    scrollTo(scrollX, from + (to - from) * k * (2 - k));
+    const k = hurry ? 1 : Math.min(1, (performance.now() - t0) / 350), eased = k * (2 - k);
+    pan = from.pan + (to.pan - from.pan) * eased;
+    scale(zoom);
+    scrollTo(scrollX, from.y + (to.y - from.y) * eased);
     if (k === 1) break;
     await frame();
   }
@@ -306,7 +312,7 @@ async function travel(y) {
 // as much wider as it is smaller, so that it fills the window's width at any zoom.
 function scale(to) {
   zoom = Math.min(1, Math.max(FAR, to));
-  page.style.transform = `scale(${zoom})`; page.style.width = 100 / zoom + "%";
+  page.style.transform = `translate(${-pan}px, 0) scale(${zoom})`; page.style.width = 100 / zoom + "%";
   grow(); redraw();
 }
 
@@ -354,37 +360,45 @@ function lines() {
   return found;
 }
 
-// Returns the picture the agent gets of one part of the sheet: what the visitor sees of its width, at most 1600
-// units around the middle, from y = from down, as high as what the visitor sees. One pixel is one page unit. The picture has
-// the homepage's text, every stroke in its own colour, and a grid line every GRID units, labelled with its
-// coordinate. As {picture, left, right, top, bottom}: a base64 PNG and the x and y of the part's edges.
+// Returns the picture the agent gets of one part of the sheet: all of the width the visitor sees, from y = from
+// down, as high as what the visitor sees. One pixel is one page unit, until the part is more than 1600 units wide
+// or 1200 high: then the picture is scaled down to fit, so that it always shows everything the visitor sees and
+// never a cut-out of it. The picture has the homepage's text, every stroke in its own colour, and labelled grid
+// lines, GRID units apart and further apart in a picture that is scaled down. As {picture, left, right, top,
+// bottom}: a base64 PNG and the x and y of the part's edges.
 function picture(from = above) {
   from = Math.round(from);
-  const span = Math.min(Math.round(wide), 1600), high = Math.min(Math.round(tall), 1200);
-  const x0 = Math.round(left + (wide - span) / 2);
-  const can = Object.assign(document.createElement("canvas"), {width: span, height: high}), c = can.getContext("2d");
-  c.fillStyle = "#fff"; c.fillRect(0, 0, span, high);
-  c.strokeStyle = "#d4d4d4"; c.lineWidth = 1; c.font = "12px sans-serif"; c.textBaseline = "top";
-  for (let x = (Math.floor(x0 / GRID) + 1) * GRID; x < x0 + span; x += GRID) {
-    c.beginPath(); c.moveTo(x - x0, 0); c.lineTo(x - x0, high); c.stroke();
-    c.fillStyle = "#8a8a8a"; c.fillText(x, x - x0 + 3, 3);
+  const x0 = Math.round(left), span = Math.round(wide), high = Math.round(tall);
+  const k = Math.min(1, 1600 / span, 1200 / high);   // pixels per page unit
+  const step = GRID * (k >= 0.5 ? 1 : k >= 0.25 ? 2 : 5);
+  const layer = () => {   // a canvas the size of the picture, drawn on in page units from (x0, from)
+    const can = Object.assign(document.createElement("canvas"), {width: Math.round(span * k), height: Math.round(high * k)});
+    const c = can.getContext("2d");
+    c.scale(k, k); c.translate(-x0, -from);
+    return c;
+  };
+  const c = layer();
+  c.fillStyle = "#fff"; c.fillRect(x0, from, span, high);
+  c.strokeStyle = "#d4d4d4"; c.lineWidth = 1 / k; c.font = `${12 / k}px sans-serif`; c.textBaseline = "top";
+  for (let x = (Math.floor(x0 / step) + 1) * step; x < x0 + span; x += step) {
+    c.beginPath(); c.moveTo(x, from); c.lineTo(x, from + high); c.stroke();
+    c.fillStyle = "#8a8a8a"; c.fillText(x, x + 3 / k, from + 3 / k);
   }
-  for (let y = (Math.floor(from / GRID) + 1) * GRID; y < from + high; y += GRID) {
-    c.beginPath(); c.moveTo(0, y - from); c.lineTo(span, y - from); c.stroke();
-    c.fillStyle = "#8a8a8a"; c.fillText(y, 3, y - from + 3);
+  for (let y = (Math.floor(from / step) + 1) * step; y < from + high; y += step) {
+    c.beginPath(); c.moveTo(x0, y); c.lineTo(x0 + span, y); c.stroke();
+    c.fillStyle = "#8a8a8a"; c.fillText(y, x0 + 3 / k, y + 3 / k);
   }
   c.textBaseline = "alphabetic";
   for (const w of words()) {   // a word's box is its font's whole height: the letters stand about 0.8 of it down
     c.font = w.font; c.fillStyle = w.color;
-    c.fillText(w.text, w.x - x0, w.y - from + w.height * 0.8);
+    c.fillText(w.text, w.x, w.y + w.height * 0.8);
   }
-  const ink = Object.assign(document.createElement("canvas"), {width: span, height: high});   // the ink on its own
-  ink.getContext("2d").translate(-x0, -from);                                // layer, so that a rub leaves the text
+  const ink = layer();   // the ink on its own layer, so that a rub leaves the text
   // every mark whole and solid, whatever the visitor sees of it so far
-  paintAll(ink.getContext("2d"), from, from + high, m => ({...m, shown: undefined, draft: false, from: undefined}));
-  c.globalCompositeOperation = "multiply";
-  c.drawImage(ink, 0, 0);
-  return {picture: can.toDataURL("image/png").split(",")[1], left: x0, right: x0 + span, top: from, bottom: from + high};
+  paintAll(ink, from, from + high, m => ({...m, shown: undefined, draft: false, from: undefined}));
+  c.resetTransform(); c.globalCompositeOperation = "multiply";
+  c.drawImage(ink.canvas, 0, 0);
+  return {picture: c.canvas.toDataURL("image/png").split(",")[1], left: x0, right: x0 + span, top: from, bottom: from + high};
 }
 
 // Returns all the ink on the sheet for the agent, oldest first, as [{by, color, what, x, y, width, height}]: one
@@ -445,7 +459,7 @@ addEventListener("pointermove", e => {
   if (scrolling && fingers.has(e.pointerId)) {
     const was = held;
     held = grip();
-    scrollBy(was.x - held.x, was.y - held.y);
+    pan += was.x - held.x; scrollBy(0, was.y - held.y);
     if (was.apart && held.apart) scale(zoom * held.apart / was.apart);
     return;
   }
@@ -464,6 +478,8 @@ function lift(e) {
   added(done); grow();
   redraw(); ready();
 }
+// A sideways turn of the wheel, or two fingers moved sideways on a trackpad, moves the page sideways.
+addEventListener("wheel", e => { if (e.deltaX && !e.ctrlKey) { pan += e.deltaX; scale(zoom); } }, {passive: true});
 addEventListener("pointerup", lift);
 addEventListener("pointercancel", lift);
 
@@ -789,23 +805,15 @@ async function turn() {
     erase: boxes => { for (const rub of boxes) { const m = {rub}; marks.push(m); added(m); } redraw(); },
     move: move => { const m = {move, now: () => ({})}; marks.push(m); added(m); drawing = drawing.then(() => play(m)); },
     zoom: to => { drawing = drawing.then(() => glide(to)); },
-    scroll: y => { drawing = drawing.then(() => travel(y)); },
+    scroll: to => { drawing = drawing.then(() => travel(to)); },
     look: one => asked.push(one),
     doing: text => note(text + "…"),
     done: () => { over = true; },
   };
-  let address = `/api/sheets/${sheet}/`;
+  const address = `/api/sheets/${sheet}/`;
   try {
     for (let request = ["turns", body]; request;) {
-      let r = await post(address + request[0], request[1], stopper.signal);
-      if (kept && (r.status === 404 || r.status === 429)) {   // the kept sheet is gone or full: start a new one
-        kept = false; sheet = null; opening = null;
-        try { sessionStorage.removeItem(KEPT); } catch { /* storage is switched off */ }
-        await open();
-        if (!sheet) throw new Error("no sheet");
-        address = `/api/sheets/${sheet}/`;
-        r = await post(address + request[0], request[1], stopper.signal);
-      }
+      const r = await post(address + request[0], request[1], stopper.signal);
       if (!r.ok) throw new Error(`the server answered ${r.status}`);
       const reader = r.body.getReader(), text = new TextDecoder();
       let buf = "";
@@ -842,17 +850,14 @@ function stop() { hurry = true; stopper.abort(); }
 
 // ---- opening the sheet ----
 
-// Opens the visitor's sheet on the server, once: later calls return the same promise. A tab that has a sheet goes on
-// with it. Otherwise the visitor passes the bot check, which never shows: a visitor Turnstile doubts gets no sheet.
-// The server then starts a sheet. When any of this fails there is no sheet, and the agent does not answer in this tab.
+// Opens the visitor's sheet on the server, once: later calls return the same promise. The visitor passes the bot
+// check, which never shows: a visitor Turnstile doubts gets no sheet. The server then starts a sheet. When any of
+// this fails there is no sheet, and the agent does not answer in this tab.
 function open() {
   return opening ??= (async () => {
-    try { sheet = sessionStorage.getItem(KEPT); } catch { /* storage is switched off */ }
-    if (sheet) { kept = true; return; }
     const r = await post("/api/sheets", {token: await challenge("sheet", document.body, true)});
     if (!r.ok) throw new Error(`the server answered ${r.status}`);
     sheet = (await r.json()).sheet;
-    try { sessionStorage.setItem(KEPT, sheet); } catch { /* storage is switched off */ }
   })().catch(err => { dead = true; console.warn("No sheet:", err); });
 }
 
