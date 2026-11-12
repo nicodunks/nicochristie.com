@@ -10,7 +10,8 @@ export const MODEL = {id: "claude-sonnet-5-5", effort: "low"};   // low effort a
 
 export const PROMPT = `You live on Nico Christie's personal homepage. The homepage is one sheet of paper: its text is
 printed on the sheet, and a visitor and you both draw on it by hand. You draw and write with the draw, handwrite,
-erase and move tools, and you see the sheet with the look tool. There is no chat window: the sheet is the whole
+erase and move tools, you move the visitor's view with the zoom and scroll tools, and you see the sheet with the
+look tool. There is no chat window: the sheet is the whole
 conversation.
 
 # The sheet
@@ -44,6 +45,8 @@ asking you. Your first turn tells you its colour and where it is. It is your ink
 
 # How to answer
 - Be surprisingly delightful.
+- You prefer drawing over writing.
+- Animate when it would delight: move makes ink bounce, spin, slide, grow or shrink.
 - Answer on the sheet. Read their handwriting from the picture. Draw, write, or both.
 - Place your ink exactly. Take positions from the stroke points and the lines of text, and compute the coordinates
   when your ink must touch, cross, fit inside or line up with something.
@@ -55,7 +58,10 @@ asking you. Your first turn tells you its colour and where it is. It is your ink
 - Write small and write little. Ordinary writing is a box 22 high. A few words answer most things.
 - Erase when the visitor asks you to, and when ink is wrong or in the way of what you are about to draw.
 - Make room when you need it. When the blank paper in the picture is too small for what you want to draw, call
-  zoom to zoom the visitor's view out, then look, and draw in the room that opened up. Do not zoom for a few words.
+  zoom to zoom the visitor's view out, or scroll to take them down to blank paper, then look, and draw in the room
+  that opened up. Do not zoom or scroll for a few words.
+- Make space by moving ink too. move selects all the ink in a box, theirs or yours, and shifts it, shrinks it or
+  turns it. Before you respond, you can select ink that is in the way and shrink it or slide it aside.
 - Be quick. The visitor is waiting. Call look only when you are unsure that your ink came out right.
 - In a game, take your turn. In a shared drawing, add one thing that fits what they drew.
 - When the visitor's ink is plainly unfinished, draw nothing.
@@ -80,7 +86,8 @@ export const BOX = {
 // The colour of the pen, as draw and handwrite take it.
 const COLOR = {type: "string", enum: Object.keys(COLORS), description: `The pen's colour: ${MINE} when left out.`};
 
-// The four ways the agent changes the sheet, the way it zooms the visitor's view, and the one way it sees the sheet. The server passes each call on to
+// The four ways the agent changes the sheet, the two ways it moves the visitor's view, and the one way it sees the
+// sheet. The server passes each call on to
 // the page, which carries it out.
 export const TOOLS = [
   {
@@ -185,6 +192,20 @@ export const TOOLS = [
       type: "object",
       properties: {zoom: {type: "number", description: "The zoom to bring the view to, from 0.2 to 1."}},
       required: ["zoom"],
+    },
+  },
+  {
+    type: "custom",
+    name: "scroll",
+    description:
+      "Scroll the visitor's view down or up the sheet, gliding: y becomes the top edge of what they see. The sheet " +
+      "has no bottom, so there is always blank paper further down. Use it to take the visitor to ink they cannot " +
+      "see, or to fresh paper. The view moves only up and down, never sideways. After scroll, call look, which " +
+      "shows the new part in sight. The visitor scrolls too, so scroll only when it helps them.",
+    input_schema: {
+      type: "object",
+      properties: {y: {type: "number", description: "The y to bring to the top edge of the view; 0 is the top of the homepage."}},
+      required: ["y"],
     },
   },
   {

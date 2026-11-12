@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {inflateSync} from 'node:zlib';
 import worker,{makePng} from './worker.mjs';
+import {ink} from './sheet.mjs';
 const origin='https://nicochristie.com';
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0003_sheets.sql',import.meta.url),'utf8'));
@@ -103,4 +104,8 @@ test('a turn is refused when malformed, and a sheet takes a bounded number of tu
  assert.equal((await request(path,turn)).status,200);assert.equal(sql.prepare('SELECT turns FROM sheets WHERE id=?').get(sheet).turns,1);
  sql.prepare('UPDATE sheets SET turns=40 WHERE id=?').run(sheet);assert.equal((await request(path,turn)).status,429);
  assert.equal((await request('/api/sheets/'+sheet+'/stop',{})).status,200);assert.equal(env.CLAUDE.sent.at(-1).type,'user.interrupt');
+});
+test('the agent scrolls and zooms the view within bounds',()=>{
+ assert.deepEqual(ink('scroll',{y:640}),{scroll:640});assert.deepEqual(ink('scroll',{y:-50}),{scroll:0});assert.equal(ink('scroll',{y:'down'}),null);
+ assert.deepEqual(ink('zoom',{zoom:0.01}),{zoom:0.2});assert.deepEqual(ink('zoom',{zoom:5}),{zoom:1});
 });

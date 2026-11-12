@@ -17,6 +17,7 @@
 //   {"erase": [{"x", "y", "width", "height"}, ...]} boxes to rub out
 //   {"move": {"box", "steps", "seconds"}}           ink to move through steps, each {dx, dy, scale, rotate}
 //   {"zoom": number}                                the zoom to bring the visitor's view to, in pixels per unit
+//   {"scroll": number}                              the y to bring to the top of the visitor's view
 //   {"look": {"id", "y"}}                           the agent asks to see the sheet from y down, or what the visitor
 //                                                   sees if y is null. After the stretch, the page sends every
 //                                                   picture asked for in it as one request to looks, and the
@@ -35,7 +36,7 @@ const TURNS = 40;             // the most turns one sheet takes
 const MAX_BODY = 6_000_000;   // the most bytes of one turn or one set of looks
 const SHEET = /^\/api\/sheets\/([0-9a-f-]{36})\/(turns|looks|stop)$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
-const DOING = {draw: "drawing", handwrite: "writing", erase: "erasing", move: "moving", zoom: "zooming"};   // what the page shows
+const DOING = {draw: "drawing", handwrite: "writing", erase: "erasing", move: "moving", zoom: "zooming", scroll: "moving the page"};   // what the page shows
 const SIDES = Object.keys(BOX);
 
 const number = v => typeof v === "number" && Number.isFinite(v);
@@ -81,6 +82,7 @@ export function ink(name, given) {
   if (name === "handwrite" && Array.isArray(given.texts) && given.texts.every(t => boxed(t) && typeof t.text === "string" && color(t)))
     return {write: given.texts.map(t => ({...box(t), text: t.text, color: color(t)}))};
   if (name === "erase" && Array.isArray(given.boxes) && given.boxes.every(boxed)) return {erase: given.boxes.map(box)};
+  if (name === "scroll" && number(given.y)) return {scroll: Math.min(100_000, Math.max(0, given.y))};
   if (name === "zoom" && number(given.zoom)) return {zoom: Math.min(1, Math.max(0.2, given.zoom))};
   const steps = given.steps;
   if (name === "move" && boxed(given) && number(given.seconds) && Array.isArray(steps) && steps.length
@@ -104,7 +106,7 @@ export function ink(name, given) {
 export async function* answer(claude, session, events) {
   let begun = false;     // the agent has started on `events`: before that, the session may still report an earlier stop
   let looking = false;   // the agent asked to see the sheet in this stretch
-  const results = [];    // what to tell the agent of each draw, handwrite, erase, move and zoom
+  const results = [];    // what to tell the agent of each draw, handwrite, erase, move, zoom and scroll
   const stream = await claude.beta.sessions.events.stream(session);
   await claude.beta.sessions.events.send(session, {events});
   for await (const e of stream) {

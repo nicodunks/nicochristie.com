@@ -24,6 +24,7 @@
 // The sheet zooms: the homepage's text and the ink grow and shrink together, and zoomed out there is more blank
 // paper in the window to draw on. The page opens zoomed out, to the zoom sheet.css gives #page, which is further out
 // on a phone. The visitor zooms with two fingers while they hold the pen, and the agent zooms with its zoom tool.
+// The agent can also scroll the visitor's view down or up the sheet, with its scroll tool.
 //
 // One page unit is one CSS pixel at zoom 1. The point (0, 0) is the top left corner of the page's column, <main>,
 // so that the ink stays on its text when the window is widened; x is below 0 in the left margin, and y grows
@@ -280,10 +281,25 @@ function fit() {
   redraw();
 }
 
-// Makes the page long enough to scroll to the lowest ink, when ink goes below the homepage's own text.
+// Makes the page long enough to scroll to the lowest ink, when ink goes below the homepage's own text, and never
+// shorter than where the visitor is now.
 function grow() {
   const low = made.reduce((y, m) => Math.max(y, reach(m).y1), 0) + 120;
-  document.body.style.minHeight = column.getBoundingClientRect().top + scrollY + low * zoom + "px";
+  const top = column.getBoundingClientRect().top + scrollY;   // where the column starts, down the page
+  document.body.style.minHeight = Math.max(top + low * zoom, scrollY + innerHeight) + "px";
+}
+
+// Scrolls the visitor's view so that y on the sheet is at the top of the window, gliding there over a third of a
+// second, after making the page long enough to go there. Resolves when the view is there.
+async function travel(y) {
+  const top = column.getBoundingClientRect().top + scrollY, to = top + Math.max(0, y) * zoom, from = scrollY;
+  document.body.style.minHeight = Math.max(parseFloat(document.body.style.minHeight) || 0, to + innerHeight) + "px";
+  for (const t0 = performance.now(); ;) {
+    const k = hurry ? 1 : Math.min(1, (performance.now() - t0) / 350);
+    scrollTo(scrollX, from + (to - from) * k * (2 - k));
+    if (k === 1) break;
+    await frame();
+  }
 }
 
 // Zooms the sheet to `to` screen pixels per page unit, between FAR and 1: the homepage's text is scaled, and made
@@ -773,6 +789,7 @@ async function turn() {
     erase: boxes => { for (const rub of boxes) { const m = {rub}; marks.push(m); added(m); } redraw(); },
     move: move => { const m = {move, now: () => ({})}; marks.push(m); added(m); drawing = drawing.then(() => play(m)); },
     zoom: to => { drawing = drawing.then(() => glide(to)); },
+    scroll: y => { drawing = drawing.then(() => travel(y)); },
     look: one => asked.push(one),
     doing: text => note(text + "…"),
     done: () => { over = true; },
@@ -803,7 +820,7 @@ async function turn() {
       }
       // the stretch is over: the agent's turn goes on if the agent asked to see the sheet
       if (!asked.length && !over) throw new Error("the agent's answer broke off");
-      if (asked.length) await drawing;   // a zoom the agent asked for is done before the agent sees the sheet
+      if (asked.length) await drawing;   // a zoom or a scroll the agent asked for is done before the agent sees the sheet
       request = asked.length ? ["looks", {looks: asked.map(({id, y}) => ({id, ...picture(y ?? above)}))}] : null;
       asked = [];
     }
