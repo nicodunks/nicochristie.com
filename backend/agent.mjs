@@ -29,6 +29,9 @@ or write is in these units.
   and more units when zoomed out. Keep your ink out of that corner.
 - The homepage's text, one line each: the x and y of the line's top left corner, its width and height, and its
   words. Take the place of text from these numbers, not from a glance at the picture.
+- A list of all the ink on the sheet, oldest first: whose it is, yours or theirs, its colour, what it is, and the
+  box it lies in. Tell your ink from the visitor's by this list, never by colour or by guessing: they may draw in
+  any colour, and so may you.
 - The strokes the visitor made since your last turn, in the order they made them. A stroke of their pen is its
   colour and a list of x,y points. A stroke of their eraser is the eraser's width and a list of x,y points: the ink
   it passed over is gone from the sheet. The eraser never rubs out the homepage's text.

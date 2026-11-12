@@ -38,7 +38,10 @@
 //                                                   the box, through each step in turn over `seconds`, and leaves
 //                                                   it at the last step. A step is {dx, dy, scale, rotate}.
 // The page draws only ink. Each stroke's `ink` is what is left of it after every wipe, rub and move made after it,
-// as a list of pieces, each a list of points. A mark the agent has been told of is `seen`. The agent's writing is
+// as a list of pieces, each a list of points. A mark the agent has been told of is `seen`. Every stroke also says
+// whose it is: `by` is "agent" or "visitor", `group` names the tool call or the visitor's turn that made it, and an
+// agent's stroke has `what`, a few words for what that tool call made. The agent is given this list every turn,
+// so that it never has to tell its own ink from the visitor's by colour. The agent's writing is
 // strokes too: the page writes each letter with the pen. Such a stroke also has `gap`, the distance between its
 // points. While the agent's turn lasts, the strokes of that turn are also `draft`, and are drawn faint.
 //
@@ -87,6 +90,7 @@ document.documentElement.style.setProperty("--rest", REST + "ms");
 let marks = [];        // everything on the sheet, in the order it was made
 let made = [];         // the strokes on the sheet, in the order they were made
 let fresh = [];        // the visitor's marks the agent has not seen yet
+let groups = 0;        // how many groups of strokes there have been: tool calls of the agent and turns of the visitor
 let notes = [];        // everything the visitor said, in the order they said it
 let heard = null;      // the spoken note the visitor is speaking now
 let holds = "";        // what the visitor holds: "pen", "wipe" or ""
@@ -367,6 +371,22 @@ function picture(from = above) {
   return {picture: can.toDataURL("image/png").split(",")[1], left: x0, right: x0 + span, top: from, bottom: from + high};
 }
 
+// Returns all the ink on the sheet for the agent, oldest first, as [{by, color, what, x, y, width, height}]: one
+// entry for each tool call of the agent's and each turn of the visitor's that still has ink, with whose it is, its
+// colour, a few words for what it is, and the box it lies in. The newest 200 are given.
+function inventory() {
+  const found = [];
+  for (const m of made) {
+    if (!m.ink.some(p => p.length)) continue;
+    const b = reach(m), last = found.at(-1);
+    if (last?.group === m.group) Object.assign(last, {count: last.count + 1, x0: Math.min(last.x0, b.x0),
+      y0: Math.min(last.y0, b.y0), x1: Math.max(last.x1, b.x1), y1: Math.max(last.y1, b.y1)});
+    else found.push({group: m.group, by: m.by, color: m.color, what: m.what, count: 1, ...b});
+  }
+  return found.slice(-200).map(g => ({by: g.by, color: g.color, what: g.by === "agent" ? g.what : g.count === 1 ? "1 stroke" : `${g.count} strokes`,
+    x: g.x0, y: g.y0, width: g.x1 - g.x0, height: g.y1 - g.y0}));
+}
+
 // ---- the visitor's pen ----
 
 // Returns a pointer event's position in page units.
@@ -396,7 +416,7 @@ addEventListener("pointerdown", e => {
     if (pen || fingers.size > 1) { stroke = null; scrolling = true; held = grip(); redraw(); return; }
   }
   if (!stroke && !scrolling) {
-    const tool = holds === "wipe" ? {wipe: WIPE} : {color: chosen, pen: PEN};
+    const tool = holds === "wipe" ? {wipe: WIPE} : {color: chosen, pen: PEN, by: "visitor"};
     stroke = {...tool, points: [at(e)], pointer: e.pointerId, kind: e.pointerType};
     stroke.ink = [stroke.points];
     open();   // the sheet is asked for at the first stroke, and is there by the time the pen has rested
@@ -733,19 +753,23 @@ async function turn() {
   await open();
   if (!sheet) { note(""); busy = false; ready(); return false; }
   const strokes = fresh.map(({color, wipe, points}) => ({color, wipe, points: simplify(points)}));
-  const saying = notes.filter(n => !n.sent);
-  const body = {...picture(), strokes, lines: lines(), said: saying.map(n => n.text), greeted, zoom};
+  const saying = notes.filter(n => !n.sent), group = ++groups;
+  for (const m of fresh) m.group = group;
+  const body = {...picture(), strokes, lines: lines(), ink: inventory(), said: saying.map(n => n.text), greeted, zoom};
   for (const m of fresh) m.seen = true;
   fresh = []; greeted = null;
   for (const n of saying) { n.sent = true; n.open = false; }
   list(); ready();
   let drawing = Promise.resolve(), asked = [], over = false;
-  const add = m => { marks.push(Object.assign(m, {draft: true, shown: 0})); added(m); grow(); drawing = drawing.then(() => reveal(m)); };
+  const add = m => { marks.push(Object.assign(m, {by: "agent", draft: true, shown: 0})); added(m); grow(); drawing = drawing.then(() => reveal(m)); };
   const steps = {
     draw: ({paths, color, width}) => {
-      for (const d of paths) for (const points of runs(along(d))) add({color, points, pen: width});
+      const group = ++groups;
+      for (const d of paths) for (const points of runs(along(d))) add({color, points, pen: width, group, what: "a drawing"});
     },
-    write: texts => { for (const t of texts) written(t).forEach(add); },
+    write: texts => {
+      for (const t of texts) { const group = ++groups; for (const m of written(t)) add({...m, group, what: `wrote "${t.text}"`}); }
+    },
     erase: boxes => { for (const rub of boxes) { const m = {rub}; marks.push(m); added(m); } redraw(); },
     move: move => { const m = {move, now: () => ({})}; marks.push(m); added(m); drawing = drawing.then(() => play(m)); },
     zoom: to => { drawing = drawing.then(() => glide(to)); },
@@ -822,7 +846,8 @@ async function greet() {
   const x = 40, y = column.offsetHeight + 24;
   const face = [`M ${x + 4} ${y + 30} a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0`, `M ${x + 21} ${y + 21} l 0 5`,
     `M ${x + 39} ${y + 21} l 0 5`, `M ${x + 17} ${y + 36} q 13 14 26 0`];
-  const strokes = face.flatMap(d => runs(along(d))).map(points => ({color, points, pen: PEN}));
+  const group = ++groups;
+  const strokes = face.flatMap(d => runs(along(d))).map(points => ({color, points, pen: PEN, by: "agent", group, what: "the happy face the page greeted with"}));
   for (const m of strokes) { marks.push(Object.assign(m, {shown: 0, seen: true})); added(m); }
   greeted = {color, x, y, width: 60, height: 60};
   grow();

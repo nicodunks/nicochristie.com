@@ -26,6 +26,7 @@ The homepage is one sheet of paper that the visitor and a Claude agent both draw
 - The agent has only the page tools: draw, handwrite, erase, move, zoom and look. It has no shell, no files and no web. What the agent says outside these tools is dropped.
 - A reload wipes the ink and the page greets the visitor again. The tab keeps the sheet's id in `sessionStorage`, so a reload goes on with the same sheet and counts against no cap but the sheet's own turns and budget.
 - The visitor can also speak: while they hold Speak, the browser's own speech recogniser writes down their words, and the words go to the agent with the turn. The page keeps no sound.
+- Every turn the agent is given a list of all the ink on the sheet that says whose each piece is, so it does not have to tell its own ink from the visitor's by colour.
 - The sheet zooms between 0.2 and 1. A wide window opens at 1 and a phone at 0.7, the visitor zooms with two fingers, and the agent zooms with its zoom tool.
 
 To set the agent up once, with the personal Anthropic key:

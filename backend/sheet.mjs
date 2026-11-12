@@ -2,8 +2,8 @@
 // homepage and that session.
 //
 //   POST /api/sheets                 a new sheet, {token}: the Turnstile token of the visitor. Returns {sheet: its id}
-//   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, said,
-//                                    greeted, zoom}
+//   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, ink,
+//                                    said, greeted, zoom}
 //   POST /api/sheets/<sheet>/looks   the parts of the sheet the agent asked to see, {looks: [{id, picture, left,
 //                                    right, top, bottom}]}
 //   POST /api/sheets/<sheet>/stop    ends the agent's turn, whatever the agent is doing
@@ -52,6 +52,8 @@ export function told(turn) {
   lines.push(`The visitor's view is at zoom ${(turn.zoom ?? 1).toFixed(2)}.`, "");
   lines.push("The homepage's text, as x,y of each line's top left corner, its width x height, and its words:");
   for (const l of turn.lines) lines.push(`${n(l.x)},${n(l.y)} ${n(l.width)}x${n(l.height)}: ${l.text}`);
+  lines.push("", "All the ink on the sheet now, oldest first, with whose it is:");
+  for (const i of turn.ink) lines.push(`${i.by === "agent" ? "yours" : "theirs"}, ${i.color}: ${i.what}. x = ${n(i.x)} to ${n(i.x + i.width)}, y = ${n(i.y)} to ${n(i.y + i.height)}`);
   lines.push("");
   if (turn.said?.length) lines.push("The visitor said:", ...turn.said.map((t, i) => `${i + 1}. ${t}`), "");
   lines.push(`New strokes: ${turn.strokes.length}`);
@@ -166,6 +168,9 @@ function checked(turn, fail) {
     && (number(s.wipe) && s.wipe > 0 || typeof s.color === "string" && Object.hasOwn(COLORS, s.color));
   const text = l => l && typeof l === "object" && SIDES.every(k => number(l[k])) && typeof l.text === "string" && l.text.length <= 400;
   if (!Array.isArray(turn.strokes) || turn.strokes.length > 400 || !turn.strokes.every(stroke)) fail(400, "Invalid strokes.");
+  const inked = i => i && typeof i === "object" && SIDES.every(k => number(i[k])) && (i.by === "agent" || i.by === "visitor")
+    && typeof i.color === "string" && Object.hasOwn(COLORS, i.color) && typeof i.what === "string" && i.what.length <= 300;
+  if (!Array.isArray(turn.ink) || turn.ink.length > 200 || !turn.ink.every(inked)) fail(400, "Invalid ink.");
   if (!Array.isArray(turn.lines) || turn.lines.length > 300 || !turn.lines.every(text)) fail(400, "Invalid text.");
   if (turn.greeted != null && !(SIDES.every(k => number(turn.greeted[k])) && typeof turn.greeted.color === "string" && Object.hasOwn(COLORS, turn.greeted.color))) fail(400, "Invalid turn.");
   if (turn.said !== undefined && !(Array.isArray(turn.said) && turn.said.length <= 20 && turn.said.every(t => typeof t === "string" && t.length <= 2000))) fail(400, "Invalid turn.");

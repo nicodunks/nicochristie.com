@@ -63,7 +63,7 @@ function fakeClaude(events=[]){
   events:{stream:async()=>(async function*(){yield* events;})(),send:async(_id,{events})=>{claude.sent.push(...events);}}}}};
  return claude;
 }
-const turn={picture:'iVBORw0KGgo=',left:0,right:800,top:0,bottom:600,strokes:[{color:'black',points:[[1,2],[3,4]]}],lines:[{text:'Nico Christie',x:16,y:24,width:200,height:37}]};
+const turn={picture:'iVBORw0KGgo=',left:0,right:800,top:0,bottom:600,strokes:[{color:'black',points:[[1,2],[3,4]]}],lines:[{text:'Nico Christie',x:16,y:24,width:200,height:37}],ink:[{by:'agent',color:'pink',what:'the happy face the page greeted with',x:40,y:400,width:60,height:60},{by:'visitor',color:'black',what:'1 stroke',x:1,y:2,width:2,height:2}]};
 test('a new sheet needs the bot check, gets a capped session, and keeps the session id to itself',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude();
  assert.equal((await request('/api/sheets',{})).status,403);assert.equal(env.CLAUDE.made.length,0);
@@ -91,7 +91,7 @@ test('a turn streams the agent\'s ink, drops malformed calls, and ends the turn 
  const lines=(await response.text()).trim().split('\n').map(l=>JSON.parse(l));
  assert.deepEqual(lines,[{doing:'thinking'},{doing:'drawing'},{draw:{paths:['M 0 0 L 9 9'],color:'red',width:30}},{doing:'drawing'},{done:true}]);
  const [message,first,second,interrupt]=env.CLAUDE.sent;
- assert.match(message.content[1].text,/The visitor said:\n1\. draw a cat/);assert.match(message.content[1].text,/a small happy face in pink, in the box from x = 40 to 100/);assert.match(message.content[1].text,/16,24 200x37: Nico Christie/);assert.match(message.content[1].text,/1\. black: 1,2 3,4/);
+ assert.match(message.content[1].text,/yours, pink: the happy face the page greeted with\. x = 40 to 100, y = 400 to 460\ntheirs, black: 1 stroke/);assert.match(message.content[1].text,/The visitor said:\n1\. draw a cat/);assert.match(message.content[1].text,/a small happy face in pink, in the box from x = 40 to 100/);assert.match(message.content[1].text,/16,24 200x37: Nico Christie/);assert.match(message.content[1].text,/1\. black: 1,2 3,4/);
  assert.equal(first.is_error,false);assert.equal(second.is_error,true);assert.equal(interrupt.type,'user.interrupt');
 });
 test('a turn is refused when malformed, and a sheet takes a bounded number of turns',async t=>{
