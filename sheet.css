@@ -29,11 +29,11 @@ html.drawing a { cursor: pointer; }
 #tools svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 #tools .on { box-shadow: 0 0 0 2px #44423d; }
 #tools .ink { border: none; }
-#tools.off > :not(.pen):not(#caption) { display: none; }   /* the pen is down: only the button that takes it up shows */
 #tools #send { padding: 0 14px; background: #2c49c9; border-color: #2c49c9; color: #fff; }
 /* the pen is resting: the button fills from the left, and the turn goes when it is full */
 #tools #send.soon { background: linear-gradient(90deg, #1b2f8a 50%, #2c49c9 50%) 100% 0 / 200% 100%; animation: soon var(--rest) linear forwards; }
-#tools #send.stop { background: #c9302c; border-color: #c9302c; }
+#tools #send.stop, #tools .speak.on { background: #c9302c; border-color: #c9302c; color: #fff; }
+#tools .speak { touch-action: none; }
 #tools [hidden] { display: none; }
 @keyframes soon { to { background-position: 0 0; } }
 
@@ -48,5 +48,15 @@ html.drawing a { cursor: pointer; }
 #caption:empty { display: none; }
 #caption::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2c49c9; animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .2; transform: scale(.7); } }
+
+/* the spoken notes: a microphone icon each, at the bottom left, open to show its words */
+#notes { position: fixed; left: 14px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 11; max-width: calc(100% - 28px);
+  max-height: 40vh; display: flex; flex-wrap: wrap; align-content: flex-end; gap: 6px; overflow-y: auto; pointer-events: none;
+  font: 15px -apple-system, system-ui, sans-serif; }
+#notes:not(:empty) { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 60px); }   /* clear of the tools on a narrow window */
+.note { pointer-events: auto; display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 5px 9px;
+  border-radius: 14px; border: 1px solid #b9b5ab; background: #fff; color: #44423d; cursor: pointer; }
+.note.sent { opacity: .5; }
+.note button { padding: 0 8px; border: none; background: none; font-size: 20px; line-height: 1; cursor: pointer; }
 
 svg#measure { position: absolute; width: 0; height: 0; visibility: hidden; }

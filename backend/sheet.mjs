@@ -2,8 +2,8 @@
 // homepage and that session.
 //
 //   POST /api/sheets                 a new sheet, {token}: the Turnstile token of the visitor. Returns {sheet: its id}
-//   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, undone,
-//                                    greeted, zoom}
+//   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, said,
+//                                    undone, greeted, zoom}
 //   POST /api/sheets/<sheet>/looks   the parts of the sheet the agent asked to see, {looks: [{id, picture, left,
 //                                    right, top, bottom}]}
 //   POST /api/sheets/<sheet>/stop    ends the agent's turn, whatever the agent is doing
@@ -53,7 +53,9 @@ export function told(turn) {
   lines.push(`The visitor's view is at zoom ${(turn.zoom ?? 1).toFixed(2)}.`, "");
   lines.push("The homepage's text, as x,y of each line's top left corner, its width x height, and its words:");
   for (const l of turn.lines) lines.push(`${n(l.x)},${n(l.y)} ${n(l.width)}x${n(l.height)}: ${l.text}`);
-  lines.push("", `New strokes: ${turn.strokes.length}`);
+  lines.push("");
+  if (turn.said?.length) lines.push("The visitor said:", ...turn.said.map((t, i) => `${i + 1}. ${t}`), "");
+  lines.push(`New strokes: ${turn.strokes.length}`);
   turn.strokes.forEach((s, i) => {
     const tool = s.wipe ? `eraser ${n(s.wipe)} wide` : s.color;
     lines.push(`${i + 1}. ${tool}: ` + s.points.map(([x, y]) => `${n(x)},${n(y)}`).join(" "));
@@ -167,6 +169,7 @@ function checked(turn, fail) {
   if (!Array.isArray(turn.strokes) || turn.strokes.length > 400 || !turn.strokes.every(stroke)) fail(400, "Invalid strokes.");
   if (!Array.isArray(turn.lines) || turn.lines.length > 300 || !turn.lines.every(text)) fail(400, "Invalid text.");
   if (turn.greeted != null && !(SIDES.every(k => number(turn.greeted[k])) && typeof turn.greeted.color === "string" && Object.hasOwn(COLORS, turn.greeted.color))) fail(400, "Invalid turn.");
+  if (turn.said !== undefined && !(Array.isArray(turn.said) && turn.said.length <= 20 && turn.said.every(t => typeof t === "string" && t.length <= 2000))) fail(400, "Invalid turn.");
   if (turn.zoom !== undefined && !(number(turn.zoom) && turn.zoom > 0)) fail(400, "Invalid turn.");
   if (turn.undone !== undefined && !(Number.isInteger(turn.undone) && turn.undone >= 0)) fail(400, "Invalid turn.");
 }

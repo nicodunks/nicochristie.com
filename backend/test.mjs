@@ -87,11 +87,11 @@ test('a turn streams the agent\'s ink, drops malformed calls, and ends the turn 
   {type:'agent.custom_tool_use',id:'t2',name:'draw',input:{paths:'<script>',color:'red'}},
   {type:'session.status_idle',stop_reason:{type:'requires_action'}},{type:'agent.custom_tool_use',id:'late',name:'erase',input:{boxes:[]}}]);
  const {sheet}=await (await request('/api/sheets',{token:'ok'})).json();
- const response=await request('/api/sheets/'+sheet+'/turns',{...turn,greeted:{color:'pink',x:40,y:400,width:60,height:60}});assert.equal(response.status,200);
+ const response=await request('/api/sheets/'+sheet+'/turns',{...turn,said:['draw a cat'],greeted:{color:'pink',x:40,y:400,width:60,height:60}});assert.equal(response.status,200);
  const lines=(await response.text()).trim().split('\n').map(l=>JSON.parse(l));
  assert.deepEqual(lines,[{doing:'thinking'},{doing:'drawing'},{draw:{paths:['M 0 0 L 9 9'],color:'red',width:30}},{doing:'drawing'},{done:true}]);
  const [message,first,second,interrupt]=env.CLAUDE.sent;
- assert.match(message.content[1].text,/a small happy face in pink, in the box from x = 40 to 100/);assert.match(message.content[1].text,/16,24 200x37: Nico Christie/);assert.match(message.content[1].text,/1\. black: 1,2 3,4/);
+ assert.match(message.content[1].text,/The visitor said:\n1\. draw a cat/);assert.match(message.content[1].text,/a small happy face in pink, in the box from x = 40 to 100/);assert.match(message.content[1].text,/16,24 200x37: Nico Christie/);assert.match(message.content[1].text,/1\. black: 1,2 3,4/);
  assert.equal(first.is_error,false);assert.equal(second.is_error,true);assert.equal(interrupt.type,'user.interrupt');
 });
 test('a turn is refused when malformed, and a sheet takes a bounded number of turns',async t=>{

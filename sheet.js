@@ -9,7 +9,14 @@
 //
 // The visitor holds the pen, the eraser or nothing. They hold the pen when the page opens, so a drag of the mouse
 // or of one finger draws at once, and two fingers scroll. Once a pen such as an Apple Pencil has been seen, the pen
-// draws and one finger scrolls. Tapping the pen at the bottom right puts it down, and the page is a plain page. When their pen has rested for REST
+// draws and one finger scrolls. Tapping the pen at the bottom right puts it down, and the page is a plain page.
+//
+// The visitor can also speak: while they hold Speak down, the browser's own speech recogniser writes down their
+// words, and letting go sends their turn. Everything they said is a spoken note: a microphone icon at the bottom
+// left. Tapping the icon opens the note to show its words, tapping again closes it, and the × on an open note
+// deletes it:
+//   a note     {text, sent, open}      text is the words the browser heard, sent whether the agent has been given
+//                                     it, open whether its words show When their pen has rested for REST
 // milliseconds, the page sends the server a picture of what they see, the homepage's text with where each line is,
 // and the marks they made since the agent's last turn, and draws whatever the agent answers. While the agent's turn
 // lasts, the Send button reads Stop, and pressing it, or drawing a new stroke, ends the agent's turn.
@@ -54,7 +61,7 @@ const NAMES = {alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε",
 const GRID = 100;      // the agent's picture has a labelled grid line every this many units
 const DRAFT = 0.4;     // how solid the agent's ink is while its turn lasts
 const SPEED = 900;     // how fast the agent's ink appears, in page units a second
-const PEN = 3;         // the width of the visitor's pen
+const PEN = 3;         // the width of the visitor's pen, and of the agent's when it names none
 const WIPE = 24;       // the width of the visitor's eraser
 const REST = 1500;     // how long the pen rests, in milliseconds, before the turn goes by itself
 const FAR = 0.2;       // the furthest out the sheet zooms
@@ -71,6 +78,7 @@ function make(tag, props, into) {
 const canvas = make("canvas", {id: "sheet"}, document.body), ctx = canvas.getContext("2d");
 const tools = make("div", {id: "tools"}, document.body);
 const caption = make("div", {id: "caption"}, tools), menu = make("div", {id: "menu"}, tools);
+const strip = make("div", {id: "notes"}, document.body);
 document.body.insertAdjacentHTML("beforeend", '<svg id="measure"><path/></svg>');
 const measure = document.querySelector("#measure path");
 const page = document.getElementById("page"), column = document.querySelector("main");
@@ -81,6 +89,8 @@ let made = [];         // the strokes on the sheet, in the order they were made
 let mine = [];         // the visitor's marks, in the order they made them: what Undo takes back
 let gone = 0;          // how many marks the agent has seen that the visitor took back since the agent's last turn
 let fresh = [];        // the visitor's marks the agent has not seen yet
+let notes = [];        // everything the visitor said, in the order they said it
+let heard = null;      // the spoken note the visitor is speaking now
 let holds = "";        // what the visitor holds: "pen", "wipe" or ""
 let chosen = YOURS;    // the colour of the visitor's pen
 let stroke = null;     // the mark the visitor is making now, with `pointer`, its pointer's id, and `kind`, pen,
@@ -99,6 +109,10 @@ let soon = 0;          // the timer that sends the turn once the pen has rested
 let stopper = null;    // the AbortController of the turn's requests: Stop aborts them
 let hurry = false;     // the visitor pressed Stop: the agent's ink that is not shown yet appears at once
 let zoom = new DOMMatrix(getComputedStyle(page).transform).a;   // screen pixels per page unit: opens as the stylesheet set it
+// How many times as thick every line is drawn as its width says. A line is as thick on the screen as its width at
+// the zoom the page opens at, so that zooming the page out on a phone does not thin the ink, and a third thicker
+// again on a phone, where a finger hides a thin line.
+const THICK = (innerWidth < 600 ? 1.3 : 1) / zoom;
 let left = 0;          // the x of the left edge of what the visitor sees
 let above = 0;         // the y of the top edge of what the visitor sees
 let wide = 0;          // how much of the sheet the visitor sees, as a width in page units
@@ -125,7 +139,7 @@ function paint(c, m) {
   c.globalCompositeOperation = m.wipe ? "destination-out" : "source-over";   // a wipe takes ink away
   c.strokeStyle = m.wipe ? "#000" : COLORS[m.color];
   c.globalAlpha = m.draft ? DRAFT : 1;
-  c.lineWidth = m.wipe ?? m.pen ?? PEN; c.lineCap = c.lineJoin = "round";
+  c.lineWidth = m.wipe ?? (m.pen ?? PEN) * THICK; c.lineCap = c.lineJoin = "round";
   for (const p of pieces) {
     if (!p.length) continue;
     c.beginPath();
@@ -383,7 +397,7 @@ function grip() {
 addEventListener("pointerdown", e => {
   if (!e.target.closest?.("#tools")) menu.replaceChildren();
   if (!holds || e.button > 0 || e.clientX >= document.documentElement.clientWidth) return;
-  if (e.target.closest?.("a, button, #tools, .site-bot-check")) return;
+  if (e.target.closest?.("a, button, #tools, #notes, .site-bot-check")) return;
   if (e.pointerType === "pen") { pen = true; scrolling = false; fingers.clear(); }
   if (e.pointerType === "touch") {
     if (stroke?.kind === "pen") return;
@@ -428,9 +442,9 @@ addEventListener("pointercancel", lift);
 
 // ---- the visitor's tools ----
 
-// The tools, at the bottom right: the pen, the eraser, Undo, the pen's colour and Send. Tapping the pen or the
-// eraser takes it up, and tapping the one held puts it down: then the page is a plain page again, and only the pen
-// shows. Tapping the colour opens the colours above the tools.
+// The tools, at the bottom right, always there: the pen, the eraser, Undo, the pen's colour, Speak and Send. Tapping
+// the pen or the eraser takes it up, and tapping the one held puts it down: then the page is a plain page again.
+// Tapping the colour opens the colours above the tools.
 function button(kind, title, act, into = tools) {
   const b = make("button", {className: kind, title}, into);
   b.addEventListener("click", act);
@@ -445,15 +459,78 @@ const dot = button("ink", "Colour", () => {
   if (menu.children.length) { menu.replaceChildren(); return; }
   for (const color in COLORS) button("ink", color, () => { chosen = color; holds = ""; hold("pen"); }, menu).style.background = COLORS[color];
 });
+const speak = button("speak", "Hold to speak", () => {});
+speak.textContent = "🎤";
 const send = button("", "", () => busy ? stop() : turn());
 send.id = "send";
+
+// ---- the visitor's voice ----
+
+// Shows the spoken notes at the bottom left, each as a microphone icon. An open note also shows its words, and its ×
+// once the visitor has finished speaking it. A note the agent has been given is faded.
+function list() {
+  strip.replaceChildren(...notes.map(n => {
+    const chip = document.createElement("div"), drop = document.createElement("button");
+    chip.className = n.sent ? "note sent" : "note";
+    chip.textContent = n.open ? `🎤 ${n.text || "…"}` : "🎤";
+    chip.addEventListener("click", () => { n.open = !n.open; list(); });
+    drop.textContent = "×";
+    drop.addEventListener("click", e => {
+      e.stopPropagation();
+      notes = notes.filter(x => x !== n);
+      list(); ready();
+    });
+    if (n.open && n !== heard) chip.append(drop);
+    return chip;
+  }));
+}
+
+// The browser's own speech recogniser writes down what the visitor says, while they say it. Safari and Chrome have
+// one. It stops when the visitor lets go of Speak, and by itself after a long pause. When it has stopped, the
+// visitor's turn is sent, unless a turn is with the agent: then the note waits for the next Send.
+const Recogniser = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+const ear = Recogniser ? new Recogniser() : null;
+if (ear) {
+  ear.continuous = ear.interimResults = true;
+  ear.lang = "en-US";
+  ear.addEventListener("result", e => {
+    heard.text = [...e.results].map(r => r[0].transcript).join(" ").replace(/\s+/g, " ").trim();
+    list();
+  });
+  ear.addEventListener("error", e => note(`Could not listen: ${e.error}`));
+  ear.addEventListener("end", () => {
+    if (!heard.text) notes = notes.filter(n => n !== heard);   // nothing was heard: no note
+    heard = null;
+    speak.classList.remove("on");
+    list(); ready();
+    if (!send.disabled && !busy) turn();
+  });
+}
+
+// Holding Speak down starts a spoken note, which fills with the visitor's words and starts open so that they see
+// what was heard. Letting go ends the note.
+speak.addEventListener("pointerdown", e => {
+  if (!ear) { note("This browser cannot write down speech."); return; }
+  if (heard) return;
+  speak.setPointerCapture(e.pointerId);
+  heard = {text: "", sent: false, open: true};
+  notes.push(heard);
+  ear.start();
+  open();   // the sheet is asked for now, and is there by the time the visitor has spoken
+  note("");
+  speak.classList.add("on");
+  list(); ready();
+});
+function quiet() { if (heard) ear.stop(); }
+speak.addEventListener("pointerup", quiet);
+speak.addEventListener("pointercancel", quiet);
+speak.addEventListener("contextmenu", e => e.preventDefault());   // a long press is not a menu
 
 // Takes up the pen or the eraser, or puts it down if the visitor holds it already.
 function hold(what) {
   holds = holds === what ? "" : what;
   menu.replaceChildren();
   document.documentElement.classList.toggle("drawing", holds !== "");
-  tools.classList.toggle("off", !holds);
   drawer.classList.toggle("on", holds === "pen"); rubber.classList.toggle("on", holds === "wipe");
   dot.style.background = COLORS[chosen];
 }
@@ -466,16 +543,16 @@ function undo() {
   settle(); redraw(); ready();
 }
 
-// Sets which buttons are live. Send shows when the visitor has drawn, rubbed out or taken back something the agent
-// has not been told of. While a turn is with the agent, Send reads Stop.
+// Sets which buttons are live. Send is live when the visitor has drawn, rubbed out, taken back or said something
+// the agent has not been told of, and they are not speaking. While a turn is with the agent, Send reads Stop.
 function ready() {
-  const news = !dead && (fresh.length || gone);
+  const said = notes.some(n => !n.sent);
   send.textContent = busy ? "Stop" : "Send"; send.className = busy ? "stop" : "";
-  send.hidden = !busy && !news;
+  send.disabled = !busy && (dead || heard !== null || !(fresh.length || gone || said));
   back.disabled = !mine.length;
-  // the turn goes by itself once the pen has rested, when there are new marks for the agent
+  // the turn goes by itself once the pen has rested, when there are new marks or words for the agent
   clearTimeout(soon);
-  if (!busy && !dead && fresh.length && !stroke && !scrolling) { void send.offsetWidth; send.className = "soon"; soon = setTimeout(turn, REST); }
+  if (!busy && !send.disabled && !stroke && !scrolling && (fresh.length || said)) { void send.offsetWidth; send.className = "soon"; soon = setTimeout(turn, REST); }
 }
 
 // ---- the agent's turn ----
@@ -676,10 +753,12 @@ async function turn() {
   await open();
   if (!sheet) { note(""); busy = false; ready(); return false; }
   const strokes = fresh.map(({color, wipe, points}) => ({color, wipe, points: simplify(points)}));
-  const body = {...picture(), strokes, lines: lines(), undone: gone, greeted, zoom};
+  const saying = notes.filter(n => !n.sent);
+  const body = {...picture(), strokes, lines: lines(), said: saying.map(n => n.text), undone: gone, greeted, zoom};
   for (const m of fresh) m.seen = true;
   fresh = []; gone = 0; greeted = null;
-  ready();
+  for (const n of saying) { n.sent = true; n.open = false; }
+  list(); ready();
   let drawing = Promise.resolve(), asked = [], over = false;
   const add = m => { marks.push(Object.assign(m, {draft: true, shown: 0})); added(m); grow(); drawing = drawing.then(() => reveal(m)); };
   const steps = {
