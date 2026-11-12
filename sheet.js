@@ -469,7 +469,7 @@ const dot = button("ink", "Colour", () => {
   for (const color in COLORS) button("ink", color, () => { chosen = color; holds = ""; hold("pen"); }, menu).style.background = COLORS[color];
 });
 const speak = button("speak", "Hold to speak", () => {});
-speak.textContent = "🎤";
+speak.textContent = "Hold to speak";
 const send = button("", "", () => busy ? stop() : turn());
 send.id = "send";
 

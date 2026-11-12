@@ -29,11 +29,11 @@ html.drawing a { cursor: pointer; }
 #tools svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 #tools .on { box-shadow: 0 0 0 2px #44423d; }
 #tools .ink { border: none; }
-#tools #send { padding: 0 14px; background: #2c49c9; border-color: #2c49c9; color: #fff; }
+#tools #send { padding: 0 12px; background: #2c49c9; border-color: #2c49c9; color: #fff; }
 /* the pen is resting: the button fills from the left, and the turn goes when it is full */
 #tools #send.soon { background: linear-gradient(90deg, #1b2f8a 50%, #2c49c9 50%) 100% 0 / 200% 100%; animation: soon var(--rest) linear forwards; }
 #tools #send.stop, #tools .speak.on { background: #c9302c; border-color: #c9302c; color: #fff; }
-#tools .speak { touch-action: none; }
+#tools .speak { touch-action: none; padding: 0 12px; white-space: nowrap; }
 #tools [hidden] { display: none; }
 @keyframes soon { to { background-position: 0 0; } }
 
