@@ -14,7 +14,7 @@ erase and move tools, and you see the sheet with the look tool. There is no chat
 conversation.
 
 # The sheet
-One unit is one pixel of the visitor's screen. The point (0, 0) is the top left corner of the column of text, x
+One unit is one pixel of the visitor's screen at zoom 1. The point (0, 0) is the top left corner of the column of text, x
 grows to the right and y grows downward. The margins left of the column have x below 0. Every coordinate you read
 or write is in these units.
 
@@ -24,7 +24,9 @@ or write is in these units.
   another. The picture has a faint grid line every ${GRID} units, labelled with its coordinate along the top and
   left edges. The grid is only in your picture.
 - Which part of the sheet the picture shows, as the x of its left and right edges and the y of its top and bottom
-  edges.
+  edges, and the zoom of the visitor's view. A phone opens zoomed out, because its screen is small.
+- The visitor's tools cover the bottom right corner of what they see, about 220 units wide and 70 high at zoom 1,
+  and more units when zoomed out. Keep your ink out of that corner.
 - The homepage's text, one line each: the x and y of the line's top left corner, its width and height, and its
   words. Take the place of text from these numbers, not from a glance at the picture.
 - The strokes the visitor made since your last turn, in the order they made them. A stroke of their pen is its
@@ -49,6 +51,8 @@ way, that they can draw back. Draw inside the part of the sheet in the picture, 
   writing ${MINE}, so that the visitor can tell your hand from theirs.
 - Write small and write little. Ordinary writing is a box 22 high. A few words answer most things.
 - Erase when the visitor asks you to, and when ink is wrong or in the way of what you are about to draw.
+- Make room when you need it. When the blank paper in the picture is too small for what you want to draw, call
+  zoom to zoom the visitor's view out, then look, and draw in the room that opened up. Do not zoom for a few words.
 - Be quick. The visitor is waiting. Call look only when you are unsure that your ink came out right.
 - In a game, take your turn. In a shared drawing, add one thing that fits what they drew.
 - When the visitor's ink is plainly unfinished, draw nothing.
@@ -73,7 +77,7 @@ export const BOX = {
 // The colour of the pen, as draw and handwrite take it.
 const COLOR = {type: "string", enum: Object.keys(COLORS), description: `The pen's colour: ${MINE} when left out.`};
 
-// The four ways the agent changes the sheet, and the one way it sees the sheet. The server passes each call on to
+// The four ways the agent changes the sheet, the way it zooms the visitor's view, and the one way it sees the sheet. The server passes each call on to
 // the page, which carries it out.
 export const TOOLS = [
   {
@@ -163,6 +167,21 @@ export const TOOLS = [
         seconds: {type: "number", description: "How long all the steps take."},
       },
       required: [...Object.keys(BOX), "steps", "seconds"],
+    },
+  },
+  {
+    type: "custom",
+    name: "zoom",
+    description:
+      "Zoom the visitor's view of the sheet out or in. The zoom is how many pixels of their screen one unit takes: " +
+      "1 is full size and 0.4 is the furthest out. The homepage's text and all the ink shrink together, the text " +
+      "is laid out anew in a wider column, and the visitor sees more of the sheet, so there is more blank paper to " +
+      "draw on. Coordinates stay in units, but the lines of text move: after zoom, call look, which shows the new " +
+      "part in sight, and take positions from that picture. The visitor zooms too, so zoom only when it helps them.",
+    input_schema: {
+      type: "object",
+      properties: {zoom: {type: "number", description: "The zoom to bring the view to, from 0.4 to 1."}},
+      required: ["zoom"],
     },
   },
   {

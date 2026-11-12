@@ -23,8 +23,9 @@ The homepage is one sheet of paper that the visitor and a Claude agent both draw
 - A new sheet needs a Turnstile token with the action `sheet`. The widget never shows: a visitor Turnstile would stop to question gets no sheet instead. When the check, the Worker or the agent fails, the homepage is a plain homepage without ink.
 - One internet connection may start 8 sheets per rolling 24 hours, and all visitors together 200. The database refuses a sheet over either cap before any session is paid for.
 - Each sheet's session may spend at most `SHEET_CENTS` (25 cents) at list prices, enforced by Anthropic, and takes at most 40 turns. All sheet requests share a limit of 30 per minute per connection.
-- The agent has only the page tools: draw, handwrite, erase, move and look. It has no shell, no files and no web. What the agent says outside these tools is dropped.
-- A reload in the same tab keeps the sheet, from `sessionStorage`, so the agent is not asked for a second greeting.
+- The agent has only the page tools: draw, handwrite, erase, move, zoom and look. It has no shell, no files and no web. What the agent says outside these tools is dropped.
+- A reload wipes the ink and the agent greets the visitor again. The tab keeps the sheet's id in `sessionStorage`, so a reload goes on with the same sheet and counts against no cap but the sheet's own turns and budget.
+- The sheet zooms between 0.4 and 1. A phone opens at 0.7, the visitor zooms with two fingers, and the agent zooms with its zoom tool.
 
 To set the agent up once, with the personal Anthropic key:
 

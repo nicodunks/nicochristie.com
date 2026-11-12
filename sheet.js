@@ -6,16 +6,20 @@
 // the text shows first, links stay links, and when the bot check, the server or the agent fails, the homepage is
 // simply a homepage without ink.
 //
-// The visitor holds the pen, the eraser or nothing. With a mouse they hold the pen when the page opens, and a drag
-// draws. On a touch screen they hold nothing, so a finger scrolls as on any page, until they tap the pen at the
-// bottom right. With the pen up on a touch screen, one finger draws and two fingers scroll, and once a pen such as
-// an Apple Pencil has been seen, the pen draws and one finger scrolls. When their pen has rested for REST
+// The visitor holds the pen, the eraser or nothing. They hold the pen when the page opens, so a drag of the mouse
+// or of one finger draws at once, and two fingers scroll. Once a pen such as an Apple Pencil has been seen, the pen
+// draws and one finger scrolls. Tapping the pen at the bottom right puts it down, and the page is a plain page. When their pen has rested for REST
 // milliseconds, the page sends the server a picture of what they see, the homepage's text with where each line is,
 // and the marks they made since the agent's last turn, and draws whatever the agent answers. While the agent's turn
 // lasts, the Send button reads Stop, and pressing it, or drawing a new stroke, ends the agent's turn.
 //
-// One page unit is one CSS pixel. The point (0, 0) is the top left corner of the page's column, <body>, so that
-// the ink stays on its text when the window is widened; x is below 0 in the left margin, and y grows downward.
+// The sheet zooms: the homepage's text and the ink grow and shrink together, and zoomed out there is more blank
+// paper in the window to draw on. A phone opens zoomed out to PHONE, because at full size the text fills its
+// screen. The visitor zooms with two fingers while they hold the pen, and the agent zooms with its zoom tool.
+//
+// One page unit is one CSS pixel at zoom 1. The point (0, 0) is the top left corner of the page's column, <main>,
+// so that the ink stays on its text when the window is widened; x is below 0 in the left margin, and y grows
+// downward.
 // Everything on the sheet is a mark, in page units:
 //   a stroke   {color, pen, points: [[x, y], ...]}  color is a key of COLORS, pen the width of the line
 //   a wipe     {wipe, points: [[x, y], ...]}        a stroke of the visitor's eraser, `wipe` units wide: the ink
@@ -30,8 +34,8 @@
 // strokes too: the page writes each letter with the pen. Such a stroke also has `gap`, the distance between its
 // points. While the agent's turn lasts, the strokes of that turn are also `draft`, and are drawn faint.
 //
-// A reload in the same tab keeps the sheet: the ink and the sheet's id are in sessionStorage, so the agent is not
-// asked for a second greeting.
+// A reload wipes the ink, the agent's and the visitor's alike, and the agent greets the visitor again. The tab keeps
+// the sheet's id in sessionStorage, so a reload goes on with the same sheet on the server and starts no new one.
 import {apiUrl, challenge} from "./backend-client.js";
 import {COLORS, YOURS} from "./sheet-colors.js";
 
@@ -51,7 +55,9 @@ const SPEED = 900;     // how fast the agent's ink appears, in page units a seco
 const PEN = 3;         // the width of the visitor's pen
 const WIPE = 24;       // the width of the visitor's eraser
 const REST = 1500;     // how long the pen rests, in milliseconds, before the turn goes by itself
-const KEPT = "sheet";  // the key in sessionStorage under which this tab's sheet is kept
+const PHONE = 0.7;     // the zoom a narrow window opens at
+const FAR = 0.4;       // the furthest out the sheet zooms
+const KEPT = "sheet-id";   // the key in sessionStorage under which this tab's sheet id is kept
 
 // ---- the page's own elements ----
 
@@ -66,6 +72,7 @@ const tools = make("div", {id: "tools"}, document.body);
 const caption = make("div", {id: "caption"}, tools), menu = make("div", {id: "menu"}, tools);
 document.body.insertAdjacentHTML("beforeend", '<svg id="measure"><path/></svg>');
 const measure = document.querySelector("#measure path");
+const page = document.getElementById("page"), column = document.querySelector("main");
 document.documentElement.style.setProperty("--rest", REST + "ms");
 
 let marks = [];        // everything on the sheet, in the order it was made
@@ -73,7 +80,7 @@ let made = [];         // the strokes on the sheet, in the order they were made
 let mine = [];         // the visitor's marks, in the order they made them: what Undo takes back
 let gone = 0;          // how many marks the agent has seen that the visitor took back since the agent's last turn
 let fresh = [];        // the visitor's marks the agent has not seen yet
-let holds = matchMedia("(pointer: fine)").matches ? "pen" : "";   // what the visitor holds: "pen", "wipe" or ""
+let holds = "";        // what the visitor holds: "pen", "wipe" or ""
 let chosen = YOURS;    // the colour of the visitor's pen
 let stroke = null;     // the mark the visitor is making now, with `pointer`, its pointer's id, and `kind`, pen,
                        // touch or mouse
@@ -86,8 +93,11 @@ let busy = false;      // a turn is with the agent
 let soon = 0;          // the timer that sends the turn once the pen has rested
 let stopper = null;    // the AbortController of the turn's requests: Stop aborts them
 let hurry = false;     // the visitor pressed Stop: the agent's ink that is not shown yet appears at once
+let zoom = innerWidth < 600 ? PHONE : 1;   // screen pixels per page unit
 let left = 0;          // the x of the left edge of what the visitor sees
 let above = 0;         // the y of the top edge of what the visitor sees
+let wide = 0;          // how much of the sheet the visitor sees, as a width in page units
+let tall = 0;          // how much of the sheet the visitor sees, as a height in page units
 
 // POSTs body to the server as JSON and returns the response. `signal`, when given, ends the request early.
 function post(path, body, signal) {
@@ -241,12 +251,12 @@ function paintAll(c, from, to, each = m => m) {
 // Redraws the part of the sheet the visitor sees, after working out which part that is from where the page's column
 // is in the window.
 function redraw() {
-  const column = document.body.getBoundingClientRect(), k = devicePixelRatio;
-  left = -column.left; above = -column.top;
+  const at = column.getBoundingClientRect(), k = devicePixelRatio * zoom;
+  left = -at.left / zoom; above = -at.top / zoom; wide = innerWidth / zoom; tall = innerHeight / zoom;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(k, 0, 0, k, -left * k, -above * k);
-  paintAll(ctx, above, above + innerHeight);
+  paintAll(ctx, above, above + tall);
   if (stroke) paint(ctx, stroke);
 }
 
@@ -259,7 +269,26 @@ function fit() {
 // Makes the page long enough to scroll to the lowest ink, when ink goes below the homepage's own text.
 function grow() {
   const low = made.reduce((y, m) => Math.max(y, reach(m).y1), 0) + 120;
-  if (low > document.documentElement.scrollHeight) document.body.style.minHeight = low + "px";
+  document.body.style.minHeight = column.getBoundingClientRect().top + scrollY + low * zoom + "px";
+}
+
+// Zooms the sheet to `to` screen pixels per page unit, between FAR and 1: the homepage's text is scaled, and made
+// as much wider as it is smaller, so that it fills the window's width at any zoom.
+function scale(to) {
+  zoom = Math.min(1, Math.max(FAR, to));
+  page.style.transform = `scale(${zoom})`; page.style.width = 100 / zoom + "%";
+  grow(); redraw();
+}
+
+// Zooms the sheet to `to`, gliding there over a third of a second. Resolves when the zoom is there.
+async function glide(to) {
+  const from = zoom;
+  for (const t0 = performance.now(); ;) {
+    const k = hurry ? 1 : Math.min(1, (performance.now() - t0) / 350);
+    scale(from + (to - from) * k * (2 - k));
+    if (k === 1) break;
+    await frame();
+  }
 }
 
 // ---- the homepage's text ----
@@ -267,16 +296,14 @@ function grow() {
 // Returns every word of the homepage's text with where it is on the sheet and how it is printed, as
 // [{text, x, y, width, height, font, color}], in the order of the page's source.
 function words() {
-  const column = document.body.getBoundingClientRect(), found = [], range = document.createRange();
-  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const at = column.getBoundingClientRect(), found = [], range = document.createRange();
+  const walk = document.createTreeWalker(column, NodeFilter.SHOW_TEXT);
   for (let node; (node = walk.nextNode());) {
-    const el = node.parentElement;
-    if (el.closest("#tools, script, style, .site-bot-check")) continue;
-    const s = getComputedStyle(el);
+    const s = getComputedStyle(node.parentElement);
     for (const m of node.data.matchAll(/\S+/g)) {
       range.setStart(node, m.index); range.setEnd(node, m.index + m[0].length);
       const r = range.getBoundingClientRect();
-      if (r.width) found.push({text: m[0], x: r.left - column.left, y: r.top - column.top, width: r.width, height: r.height,
+      if (r.width) found.push({text: m[0], x: (r.left - at.left) / zoom, y: (r.top - at.top) / zoom, width: r.width / zoom, height: r.height / zoom,
         font: `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`, color: s.color});
     }
   }
@@ -298,13 +325,13 @@ function lines() {
 }
 
 // Returns the picture the agent gets of one part of the sheet: what the visitor sees of its width, at most 1600
-// units around the middle, from y = from down, as high as the window. One pixel is one page unit. The picture has
+// units around the middle, from y = from down, as high as what the visitor sees. One pixel is one page unit. The picture has
 // the homepage's text, every stroke in its own colour, and a grid line every GRID units, labelled with its
 // coordinate. As {picture, left, right, top, bottom}: a base64 PNG and the x and y of the part's edges.
 function picture(from = above) {
   from = Math.round(from);
-  const span = Math.min(Math.round(innerWidth), 1600), high = Math.min(Math.round(innerHeight), 1200);
-  const x0 = Math.round(left + (innerWidth - span) / 2);
+  const span = Math.min(Math.round(wide), 1600), high = Math.min(Math.round(tall), 1200);
+  const x0 = Math.round(left + (wide - span) / 2);
   const can = Object.assign(document.createElement("canvas"), {width: span, height: high}), c = can.getContext("2d");
   c.fillStyle = "#fff"; c.fillRect(0, 0, span, high);
   c.strokeStyle = "#d4d4d4"; c.lineWidth = 1; c.font = "12px sans-serif"; c.textBaseline = "top";
@@ -333,17 +360,21 @@ function picture(from = above) {
 // ---- the visitor's pen ----
 
 // Returns a pointer event's position in page units.
-function at(e) { return [left + e.clientX, above + e.clientY]; }
+function at(e) { return [left + e.clientX / zoom, above + e.clientY / zoom]; }
 
-// Returns the middle of the fingers on the sheet, as {x, y} in the window.
+// Returns where the fingers on the sheet are: {x, y}, the middle of them in the window, and `apart`, how far two of
+// them are from each other, or 0 for one finger.
 function grip() {
   const f = [...fingers.values()];
-  return {x: f.reduce((s, p) => s + p.x, 0) / f.length, y: f.reduce((s, p) => s + p.y, 0) / f.length};
+  return {
+    x: f.reduce((s, p) => s + p.x, 0) / f.length, y: f.reduce((s, p) => s + p.y, 0) / f.length,
+    apart: f.length > 1 ? Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y) : 0,
+  };
 }
 
 // While the visitor holds the pen or the eraser, a pen or a mouse draws. A finger draws too until a pen has been
-// seen. One finger scrolls the page once a pen has been seen, and two fingers always scroll it: if the first of
-// them was drawing, its stroke is dropped. Links, the tools and the window's scroll bar are never drawn on.
+// seen. One finger scrolls the page once a pen has been seen. Two fingers always scroll it, and zoom the sheet as
+// they move apart or together: if the first of them was drawing, its stroke is dropped. Links, the tools and the window's scroll bar are never drawn on.
 addEventListener("pointerdown", e => {
   if (!e.target.closest?.("#tools")) menu.replaceChildren();
   if (!holds || e.button > 0 || e.clientX >= document.documentElement.clientWidth) return;
@@ -368,6 +399,7 @@ addEventListener("pointermove", e => {
     const was = held;
     held = grip();
     scrollBy(was.x - held.x, was.y - held.y);
+    if (was.apart && held.apart) scale(zoom * held.apart / was.apart);
     return;
   }
   if (!stroke || e.pointerId !== stroke.pointer) return;
@@ -619,11 +651,11 @@ function note(text) { caption.textContent = text; }
 // Each stroke and text of the agent's goes on the sheet at once, as a draft that shows nothing yet, and is then
 // revealed in order, one after the other. So the pictures the agent asks for have all its ink, however much of it
 // the visitor has seen. The turn is over once the last mark is revealed: the drafts turn solid. When anything
-// fails, the turn ends quietly, with the ink that arrived.
+// fails, the turn ends quietly, with the ink that arrived. Returns whether the agent's answer came through whole.
 async function turn(arrived = false) {
   busy = true; hurry = false; stopper = new AbortController();
   const strokes = fresh.map(({color, wipe, points}) => ({color, wipe, points: simplify(points)}));
-  const body = {...picture(), strokes, lines: lines(), undone: gone, arrived};
+  const body = {...picture(), strokes, lines: lines(), undone: gone, arrived, zoom};
   for (const m of fresh) m.seen = true;
   fresh = []; gone = 0;
   ready();
@@ -637,6 +669,7 @@ async function turn(arrived = false) {
     write: texts => { for (const t of texts) written(t).forEach(add); },
     erase: boxes => { for (const rub of boxes) { const m = {rub}; marks.push(m); added(m); } redraw(); },
     move: move => { const m = {move, now: () => ({})}; marks.push(m); added(m); drawing = drawing.then(() => play(m)); },
+    zoom: to => { drawing = drawing.then(() => glide(to)); },
     look: one => asked.push(one),
     doing: text => note(text + "…"),
     done: () => { over = true; },
@@ -659,6 +692,7 @@ async function turn(arrived = false) {
       }
       // the stretch is over: the agent's turn goes on if the agent asked to see the sheet
       if (!asked.length && !over) throw new Error("the agent's answer broke off");
+      if (asked.length) await drawing;   // a zoom the agent asked for is done before the agent sees the sheet
       request = asked.length ? ["looks", {looks: asked.map(({id, y}) => ({id, ...picture(y ?? above)}))}] : null;
       asked = [];
     }
@@ -669,8 +703,9 @@ async function turn(arrived = false) {
   note("");
   await drawing;
   for (const m of marks) delete m.draft;
-  redraw(); keep();
+  redraw();
   busy = false; ready();
+  return over;
 }
 
 // Ends the agent's turn, when the visitor presses Stop: the requests of the turn are dropped, and the agent's ink
@@ -679,34 +714,25 @@ function stop() { hurry = true; stopper.abort(); }
 
 // ---- opening the sheet ----
 
-// Keeps this tab's sheet for a reload: the sheet's id and the ink that is left, as plain strokes.
-function keep() {
-  const strokes = made.flatMap(m => m.ink.map(points => ({color: m.color, pen: m.pen, points})));
-  try { sessionStorage.setItem(KEPT, JSON.stringify({sheet, strokes})); } catch { /* storage is full or switched off */ }
-}
-
-// Opens the visitor's sheet. In a tab that has one, the sheet comes back with its ink. Otherwise the visitor passes
-// the bot check, which never shows: a visitor Turnstile doubts gets no sheet. The server starts a sheet, and the agent greets
-// them. When any of this fails there is no sheet, and the homepage is a homepage without the agent.
+// Opens the visitor's sheet, and has the agent greet them. A tab that has a sheet goes on with it. Otherwise, and
+// when that sheet no longer answers, the visitor passes the bot check, which never shows: a visitor Turnstile doubts
+// gets no sheet. The server then starts a sheet. When any of this fails there is no sheet, and the homepage is a
+// homepage without the agent.
 async function open() {
-  let kept = null;
-  try { kept = JSON.parse(sessionStorage.getItem(KEPT)); } catch { /* nothing kept */ }
-  if (kept?.sheet) {
-    sheet = kept.sheet;
-    marks = kept.strokes.map(s => ({...s, seen: true}));
-    settle(); grow(); redraw(); ready();
-    return;
-  }
+  try { sheet = sessionStorage.getItem(KEPT); } catch { /* storage is switched off */ }
+  if (sheet && await turn(true)) return;
+  sheet = null;
   const r = await post("/api/sheets", {token: await challenge("sheet", document.body, true)});
   if (!r.ok) return;
   sheet = (await r.json()).sheet;
+  try { sessionStorage.setItem(KEPT, sheet); } catch { /* storage is switched off */ }
   await turn(true);
 }
 
 addEventListener("resize", fit);
 addEventListener("scroll", redraw, {passive: true});
-holds = holds ? "" : "pen";   // hold() takes up what is not held: start from the other state
 hold("pen");
+scale(zoom);
 fit();
 ready();
 open().catch(err => console.warn("No sheet:", err));

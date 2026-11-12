@@ -3,7 +3,7 @@
 //
 //   POST /api/sheets                 a new sheet, {token}: the Turnstile token of the visitor. Returns {sheet: its id}
 //   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, undone,
-//                                    arrived}
+//                                    arrived, zoom}
 //   POST /api/sheets/<sheet>/looks   the parts of the sheet the agent asked to see, {looks: [{id, picture, left,
 //                                    right, top, bottom}]}
 //   POST /api/sheets/<sheet>/stop    ends the agent's turn, whatever the agent is doing
@@ -16,6 +16,7 @@
 //                                                   lines of text, each to write in its box in its colour
 //   {"erase": [{"x", "y", "width", "height"}, ...]} boxes to rub out
 //   {"move": {"box", "steps", "seconds"}}           ink to move through steps, each {dx, dy, scale, rotate}
+//   {"zoom": number}                                the zoom to bring the visitor's view to, in pixels per unit
 //   {"look": {"id", "y"}}                           the agent asks to see the sheet from y down, or what the visitor
 //                                                   sees if y is null. After the stretch, the page sends every
 //                                                   picture asked for in it as one request to looks, and the
@@ -34,7 +35,7 @@ const TURNS = 40;             // the most turns one sheet takes
 const MAX_BODY = 6_000_000;   // the most bytes of one turn or one set of looks
 const SHEET = /^\/api\/sheets\/([0-9a-f-]{36})\/(turns|looks|stop)$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
-const DOING = {draw: "drawing", handwrite: "writing", erase: "erasing", move: "moving"};   // what the page shows
+const DOING = {draw: "drawing", handwrite: "writing", erase: "erasing", move: "moving", zoom: "zooming"};   // what the page shows
 const SIDES = Object.keys(BOX);
 
 const number = v => typeof v === "number" && Number.isFinite(v);
@@ -43,9 +44,10 @@ const line = o => JSON.stringify(o) + "\n";
 // Returns the visitor's turn in words for the agent: what the picture shows, the homepage's text, and each new stroke.
 export function told(turn) {
   const n = v => v.toFixed(0);
-  const lines = turn.arrived ? ["A visitor has just opened the homepage. Greet them."] : [];
+  const lines = turn.arrived ? ["A visitor has just opened the homepage, or opened it again. The sheet has no ink on it. Greet them."] : [];
   if (turn.undone) lines.push(`The visitor took back ${turn.undone} of their strokes that you saw before.`);
-  lines.push(`The picture shows the sheet from x = ${n(turn.left)} to x = ${n(turn.right)} and from y = ${n(turn.top)} to y = ${n(turn.bottom)}.`, "");
+  lines.push(`The picture shows the sheet from x = ${n(turn.left)} to x = ${n(turn.right)} and from y = ${n(turn.top)} to y = ${n(turn.bottom)}.`);
+  lines.push(`The visitor's view is at zoom ${(turn.zoom ?? 1).toFixed(2)}.`, "");
   lines.push("The homepage's text, as x,y of each line's top left corner, its width x height, and its words:");
   for (const l of turn.lines) lines.push(`${n(l.x)},${n(l.y)} ${n(l.width)}x${n(l.height)}: ${l.text}`);
   lines.push("", `New strokes: ${turn.strokes.length}`);
@@ -73,6 +75,7 @@ export function ink(name, given) {
   if (name === "handwrite" && Array.isArray(given.texts) && given.texts.every(t => boxed(t) && typeof t.text === "string" && color(t)))
     return {write: given.texts.map(t => ({...box(t), text: t.text, color: color(t)}))};
   if (name === "erase" && Array.isArray(given.boxes) && given.boxes.every(boxed)) return {erase: given.boxes.map(box)};
+  if (name === "zoom" && number(given.zoom)) return {zoom: Math.min(1, Math.max(0.4, given.zoom))};
   const steps = given.steps;
   if (name === "move" && boxed(given) && number(given.seconds) && Array.isArray(steps) && steps.length
       && steps.every(t => t && typeof t === "object" && Object.values(t).every(number))) {
@@ -95,7 +98,7 @@ export function ink(name, given) {
 export async function* answer(claude, session, events) {
   let begun = false;     // the agent has started on `events`: before that, the session may still report an earlier stop
   let looking = false;   // the agent asked to see the sheet in this stretch
-  const results = [];    // what to tell the agent of each draw, handwrite, erase and move
+  const results = [];    // what to tell the agent of each draw, handwrite, erase, move and zoom
   const stream = await claude.beta.sessions.events.stream(session);
   await claude.beta.sessions.events.send(session, {events});
   for await (const e of stream) {
@@ -160,6 +163,7 @@ function checked(turn, fail) {
   const text = l => l && typeof l === "object" && SIDES.every(k => number(l[k])) && typeof l.text === "string" && l.text.length <= 400;
   if (!Array.isArray(turn.strokes) || turn.strokes.length > 400 || !turn.strokes.every(stroke)) fail(400, "Invalid strokes.");
   if (!Array.isArray(turn.lines) || turn.lines.length > 300 || !turn.lines.every(text)) fail(400, "Invalid text.");
+  if (turn.zoom !== undefined && !(number(turn.zoom) && turn.zoom > 0)) fail(400, "Invalid turn.");
   if (turn.undone !== undefined && !(Number.isInteger(turn.undone) && turn.undone >= 0)) fail(400, "Invalid turn.");
 }
 
