@@ -8,7 +8,10 @@
    paint and does not shrink once the script has loaded. A phone opens further out, because at full size the text
    fills its screen. sheet.js reads the opening zoom from this transform. */
 @media (max-width: 599px) { #page { transform: scale(0.7); width: calc(100% / 0.7); } }
-html { overflow-x: clip; }
+/* The window's own scroll bar is hidden, because the sheet has its own two bars, and a sideways swipe moves the
+   page and never goes back in the browser's history. */
+html { overflow-x: clip; overscroll-behavior: none; scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
 
 /* The ink lies over the whole window and lets every click through to the page. It is multiplied onto the page, as
    ink is onto paper, so the homepage's text stays readable under a highlight. */
@@ -58,5 +61,15 @@ html.drawing a { cursor: pointer; }
   border-radius: 14px; border: 1px solid #b9b5ab; background: #fff; color: #44423d; cursor: pointer; }
 .note.sent { opacity: .5; }
 .note button { padding: 0 8px; border: none; background: none; font-size: 20px; line-height: 1; cursor: pointer; }
+
+/* the two bars: thin and faint along the bottom and the right edge, darker and thicker while held or under the mouse */
+.bar { position: fixed; z-index: 11; touch-action: none; }
+.bar[hidden] { display: none; }
+.bar.x { left: 8px; right: 8px; bottom: 0; height: 12px; }
+.bar.y { top: 8px; bottom: 70px; right: 0; width: 12px; }
+.bar div { position: absolute; border-radius: 3px; background: rgba(0,0,0,.16); transition: background .15s; }
+.bar.x div { bottom: 2px; height: 5px; }
+.bar.y div { right: 2px; width: 5px; }
+.bar:hover div, .bar.held div { background: rgba(0,0,0,.4); }
 
 svg#measure { position: absolute; width: 0; height: 0; visibility: hidden; }

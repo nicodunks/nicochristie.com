@@ -7,6 +7,10 @@
 // the text shows first, links stay links, and when the bot check, the server or the agent fails, the homepage is
 // simply a homepage without ink.
 //
+// The view moves down and up by scrolling the window, and sideways by moving the page, which the wheel, two
+// fingers and the agent all do. Two thin bars, along the bottom and the right edge, show where the view is and
+// bring it back by dragging: each shows only while there is somewhere to go in its direction.
+//
 // The visitor holds the pen, the eraser or nothing. They hold the pen when the page opens, so a drag of the mouse
 // or of one finger draws at once, and two fingers scroll. Once a pen such as an Apple Pencil has been seen, the pen
 // draws and one finger scrolls. Tapping the pen at the bottom right puts it down, and the page is a plain page.
@@ -274,6 +278,7 @@ function redraw() {
   ctx.setTransform(k, 0, 0, k, -left * k, -above * k);
   paintAll(ctx, above, above + tall);
   if (stroke) paint(ctx, stroke);
+  place();
 }
 
 // Fits the canvas to the window, when the page opens and when the window changes.
@@ -324,6 +329,63 @@ async function glide(to) {
     scale(from + (to - from) * k * (2 - k));
     if (k === 1) break;
     await frame();
+  }
+}
+
+// ---- the bars ----
+
+// Returns, for each direction, how far the view can go and where it is: {from, size, at, seen}. Sideways, in page
+// units, the view can go over the homepage as it opens, all the ink, and where the view is now. Down, in screen
+// pixels, it can go over the whole length of the page.
+function ranges() {
+  const home = left - pan / zoom;   // the x of the view's left edge when the page has not been moved sideways
+  const ink = made.reduce((b, m) => m.ink.some(p => p.length) ? [Math.min(b[0], reach(m).x0), Math.max(b[1], reach(m).x1)] : b, [home, home + wide]);
+  const from = Math.min(home, left, ink[0]);
+  return {
+    x: {from, size: Math.max(home + wide, left + wide, ink[1]) - from, at: left, seen: wide},
+    y: {from: 0, size: document.documentElement.scrollHeight, at: scrollY, seen: innerHeight},
+  };
+}
+
+// The two bars: a thin one along the bottom edge for sideways and one along the right edge for down and up. A bar
+// shows only while there is somewhere to go in its direction. Its thumb is as long as the share of the range that
+// is in view, and dragging the thumb moves the view; a touch on the bar away from the thumb brings the middle of
+// the thumb under the touch.
+const bars = ["x", "y"].map(axis => {
+  const el = make("div", {className: `bar ${axis}`}, document.body), thumb = make("div", {}, el);
+  const sizes = () => axis === "x" ? [el.clientWidth, thumb.offsetWidth] : [el.clientHeight, thumb.offsetHeight];
+  let by = null;   // how far along the thumb it is held, or null while it is not held
+  const drag = e => {
+    if (by === null) return;
+    const r = el.getBoundingClientRect(), [track, length] = sizes(), range = ranges()[axis];
+    const k = Math.min(1, Math.max(0, ((axis === "x" ? e.clientX - r.left : e.clientY - r.top) - by) / (track - length || 1)));
+    const to = range.from + k * (range.size - range.seen);
+    if (axis === "x") { pan += (to - left) * zoom; scale(zoom); } else scrollTo(scrollX, to);
+  };
+  const release = () => { by = null; el.classList.remove("held"); };
+  el.addEventListener("pointerdown", e => {
+    el.setPointerCapture(e.pointerId);
+    const t = thumb.getBoundingClientRect(), on = axis === "x" ? e.clientX - t.left : e.clientY - t.top, length = sizes()[1];
+    by = on >= 0 && on <= length ? on : length / 2;
+    el.classList.add("held");
+    drag(e);
+  });
+  el.addEventListener("pointermove", drag);
+  el.addEventListener("pointerup", release);
+  el.addEventListener("pointercancel", release);
+  return {axis, el, thumb, sizes};
+});
+
+// Shows each bar that has somewhere to go, and puts its thumb where the view is.
+function place() {
+  const all = ranges();
+  for (const {axis, el, thumb, sizes} of bars) {
+    const {from, size, at, seen} = all[axis];
+    el.hidden = size <= seen + 1;
+    if (el.hidden) continue;
+    const track = sizes()[0], length = Math.max(40, track * seen / size);
+    thumb.style[axis === "x" ? "width" : "height"] = length + "px";
+    thumb.style[axis === "x" ? "left" : "top"] = (track - length) * (at - from) / (size - seen) + "px";
   }
 }
 
@@ -438,7 +500,7 @@ function grip() {
 addEventListener("pointerdown", e => {
   if (!e.target.closest?.("#tools")) menu.replaceChildren();
   if (!holds || e.button > 0 || e.clientX >= document.documentElement.clientWidth) return;
-  if (e.target.closest?.("a, button, #tools, #notes, .site-bot-check")) return;
+  if (e.target.closest?.("a, button, #tools, #notes, .bar, .site-bot-check")) return;
   if (e.pointerType === "pen") { pen = true; scrolling = false; fingers.clear(); }
   if (e.pointerType === "touch") {
     if (stroke?.kind === "pen") return;
