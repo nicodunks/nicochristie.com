@@ -14,8 +14,8 @@
 // lasts, the Send button reads Stop, and pressing it, or drawing a new stroke, ends the agent's turn.
 //
 // The sheet zooms: the homepage's text and the ink grow and shrink together, and zoomed out there is more blank
-// paper in the window to draw on. A phone opens zoomed out to PHONE, because at full size the text fills its
-// screen. The visitor zooms with two fingers while they hold the pen, and the agent zooms with its zoom tool.
+// paper in the window to draw on. A wide window opens zoomed out to DESK and a phone to PHONE, further out because
+// at full size the text fills its screen. The visitor zooms with two fingers while they hold the pen, and the agent zooms with its zoom tool.
 //
 // One page unit is one CSS pixel at zoom 1. The point (0, 0) is the top left corner of the page's column, <main>,
 // so that the ink stays on its text when the window is widened; x is below 0 in the left margin, and y grows
@@ -55,7 +55,8 @@ const SPEED = 900;     // how fast the agent's ink appears, in page units a seco
 const PEN = 3;         // the width of the visitor's pen
 const WIPE = 24;       // the width of the visitor's eraser
 const REST = 1500;     // how long the pen rests, in milliseconds, before the turn goes by itself
-const PHONE = 0.7;     // the zoom a narrow window opens at
+const PHONE = 0.6;     // the zoom a narrow window opens at
+const DESK = 0.75;     // the zoom a wide window opens at
 const FAR = 0.4;       // the furthest out the sheet zooms
 const KEPT = "sheet-id";   // the key in sessionStorage under which this tab's sheet id is kept
 
@@ -93,7 +94,7 @@ let busy = false;      // a turn is with the agent
 let soon = 0;          // the timer that sends the turn once the pen has rested
 let stopper = null;    // the AbortController of the turn's requests: Stop aborts them
 let hurry = false;     // the visitor pressed Stop: the agent's ink that is not shown yet appears at once
-let zoom = innerWidth < 600 ? PHONE : 1;   // screen pixels per page unit
+let zoom = innerWidth < 600 ? PHONE : DESK;   // screen pixels per page unit
 let left = 0;          // the x of the left edge of what the visitor sees
 let above = 0;         // the y of the top edge of what the visitor sees
 let wide = 0;          // how much of the sheet the visitor sees, as a width in page units
