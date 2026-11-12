@@ -3,7 +3,11 @@
 /* The homepage's text is zoomed as one piece, from its top left corner. sheet.js sets the zoom, and makes #page as
    much wider as the zoom makes it smaller, so that it always fills the window's width. It is out of the flow, so
    that the page scrolls as far as the zoomed text reaches and no further. */
-#page { position: absolute; left: 0; top: 0; width: 100%; transform-origin: 0 0; }
+#page { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: scale(0.75); width: calc(100% / 0.75); }
+/* The zoom the page opens at is set here, not by sheet.js, so that the text is at its opening size from the first
+   paint and does not shrink once the script has loaded. A phone opens further out, because at full size the text
+   fills its screen. sheet.js reads the opening zoom from this transform. */
+@media (max-width: 599px) { #page { transform: scale(0.6); width: calc(100% / 0.6); } }
 html { overflow-x: clip; }
 
 /* The ink lies over the whole window and lets every click through to the page. It is multiplied onto the page, as

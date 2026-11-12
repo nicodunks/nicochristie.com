@@ -86,7 +86,7 @@ export function ink(name, given) {
   if (name === "handwrite" && Array.isArray(given.texts) && given.texts.every(t => boxed(t) && typeof t.text === "string" && color(t)))
     return {write: given.texts.map(t => ({...box(t), text: t.text, color: color(t)}))};
   if (name === "erase" && Array.isArray(given.boxes) && given.boxes.every(boxed)) return {erase: given.boxes.map(box)};
-  if (name === "zoom" && number(given.zoom)) return {zoom: Math.min(1, Math.max(0.4, given.zoom))};
+  if (name === "zoom" && number(given.zoom)) return {zoom: Math.min(1, Math.max(0.2, given.zoom))};
   const steps = given.steps;
   if (name === "move" && boxed(given) && number(given.seconds) && Array.isArray(steps) && steps.length
       && steps.every(t => t && typeof t === "object" && Object.values(t).every(number))) {

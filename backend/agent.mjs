@@ -174,13 +174,13 @@ export const TOOLS = [
     name: "zoom",
     description:
       "Zoom the visitor's view of the sheet out or in. The zoom is how many pixels of their screen one unit takes: " +
-      "1 is full size and 0.4 is the furthest out. The homepage's text and all the ink shrink together, the text " +
+      "1 is full size and 0.2 is the furthest out, where the text is too small to read. The homepage's text and all the ink shrink together, the text " +
       "is laid out anew in a wider column, and the visitor sees more of the sheet, so there is more blank paper to " +
       "draw on. Coordinates stay in units, but the lines of text move: after zoom, call look, which shows the new " +
       "part in sight, and take positions from that picture. The visitor zooms too, so zoom only when it helps them.",
     input_schema: {
       type: "object",
-      properties: {zoom: {type: "number", description: "The zoom to bring the view to, from 0.4 to 1."}},
+      properties: {zoom: {type: "number", description: "The zoom to bring the view to, from 0.2 to 1."}},
       required: ["zoom"],
     },
   },
