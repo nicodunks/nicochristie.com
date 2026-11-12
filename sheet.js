@@ -686,7 +686,7 @@ function keep() {
 }
 
 // Opens the visitor's sheet. In a tab that has one, the sheet comes back with its ink. Otherwise the visitor passes
-// the bot check, which shows nothing unless Turnstile doubts them, the server starts a sheet, and the agent greets
+// the bot check, which never shows: a visitor Turnstile doubts gets no sheet. The server starts a sheet, and the agent greets
 // them. When any of this fails there is no sheet, and the homepage is a homepage without the agent.
 async function open() {
   let kept = null;
@@ -697,7 +697,7 @@ async function open() {
     settle(); grow(); redraw(); ready();
     return;
   }
-  const r = await post("/api/sheets", {token: await challenge("sheet", document.body)});
+  const r = await post("/api/sheets", {token: await challenge("sheet", document.body, true)});
   if (!r.ok) return;
   sheet = (await r.json()).sheet;
   await turn(true);

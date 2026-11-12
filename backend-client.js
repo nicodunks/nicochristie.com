@@ -9,14 +9,15 @@ function turnstileScript(){
   s.onload=resolve;s.onerror=()=>{s.remove();scriptPromise=null;reject(Error('Could not load the bot check. Please try again.'));};document.head.append(s);
  }));
 }
-export async function challenge(action,host){
+// With `quiet`, a visitor Turnstile would stop to question is not questioned: the check fails at once, and nothing shows.
+export async function challenge(action,host,quiet=false){
  const [{sitekey}]=await Promise.all([config(),turnstileScript()]);
  return new Promise((resolve,reject)=>{
   const box=document.createElement('div');box.className='site-bot-check';(host||document.body).append(box);
   let widget,done=false;
   const timer=setTimeout(()=>finish(Error('Bot check timed out. Please try again.')),120000);
   function finish(error,token){if(done)return;done=true;clearTimeout(timer);if(widget!==undefined)window.turnstile.remove(widget);box.remove();error?reject(error):resolve(token);}
-  try{widget=window.turnstile.render(box,{sitekey,action,appearance:'interaction-only',size:'flexible',callback:token=>finish(null,token),'error-callback':()=>finish(Error('Bot check failed. Please try again.')),'expired-callback':()=>finish(Error('Bot check expired. Please try again.'))});}catch(e){finish(e);}
+  try{widget=window.turnstile.render(box,{sitekey,action,appearance:'interaction-only',size:'flexible',callback:token=>finish(null,token),'error-callback':()=>finish(Error('Bot check failed. Please try again.')),'expired-callback':()=>finish(Error('Bot check expired. Please try again.')),...(quiet&&{'before-interactive-callback':()=>finish(Error('Bot check wants an answer.'))})});}catch(e){finish(e);}
  });
 }
 export function canvasPixels(canvas){
