@@ -115,7 +115,7 @@ export const TOOLS = [
       "Greek letters such as \\alpha and \\pi. The characters ^ and _ always start a superscript and a subscript. " +
       "Besides these, your handwriting has the letters a to z and A to Z, the digits, and the marks " +
       ". , ! ? ' \" : ; - + = / | ( ) [ ] % & # @ * < > ~ $ × ÷ ° ≈ → ←. Any other character leaves a gap: " +
-      "draw it with draw instead.",
+      "draw it with draw instead. Your handwriting has no emoji: never put one in a text, and draw a face with draw.",
     input_schema: {
       type: "object",
       properties: {
