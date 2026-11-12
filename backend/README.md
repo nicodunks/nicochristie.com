@@ -15,6 +15,29 @@ The local preview and the future GitHub Pages frontend use the API URL in `../ba
 - Visits allow 120 attempts per minute and 300 new sessions per hour per connection. Known sessions do not increment the count. IP addresses are stored only as keyed hashes. Visit deduplication rows expire after 48 hours; aggregate totals persist.
 - Automated abuse is reduced, not eliminated. Human visitors can still post inappropriate art. The owner can remove it with authenticated Cloudflare access.
 
+## The homepage's sheet
+
+The homepage is one sheet of paper that the visitor and a Claude agent both draw on. When the homepage opens, the agent greets the visitor with a drawing of its own, and the visitor can draw back. `../sheet.js` is the page's side, `sheet.mjs` is the Worker's side, and `agent.mjs` holds the agent's model, prompt and tools.
+
+- Each visitor's sheet is one session of a Claude Managed Agent, started by `POST /api/sheets`. The session's id stays in the database and never reaches the browser, which gets a random sheet id instead.
+- A new sheet needs a Turnstile token with the action `sheet`. The widget shows nothing unless Turnstile doubts the visitor. When the check, the Worker or the agent fails, the homepage is a plain homepage without ink.
+- One internet connection may start 8 sheets per rolling 24 hours, and all visitors together 200. The database refuses a sheet over either cap before any session is paid for.
+- Each sheet's session may spend at most `SHEET_CENTS` (25 cents) at list prices, enforced by Anthropic, and takes at most 40 turns. All sheet requests share a limit of 30 per minute per connection.
+- The agent has only the page tools: draw, handwrite, erase, move and look. It has no shell, no files and no web. What the agent says outside these tools is dropped.
+- A reload in the same tab keeps the sheet, from `sessionStorage`, so the agent is not asked for a second greeting.
+
+To set the agent up once, with the personal Anthropic key:
+
+```sh
+cd backend
+ANTHROPIC_API_KEY=... node setup.mjs setup          # makes the agent and writes its two ids into wrangler.json
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler d1 migrations apply nico-personal-site --remote
+npm run deploy
+```
+
+After changing the prompt or the tools in `agent.mjs`, run `ANTHROPIC_API_KEY=... node setup.mjs update`. The key's workspace should have a monthly spend limit in the Anthropic Console: the caps above bound the cost to about $50 a day at worst, and the workspace limit is the backstop.
+
 ## Development and deployment
 
 Use Node 22.13+.

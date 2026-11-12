@@ -1,1 +1,1 @@
-{"name":"nico-site-backend","private":true,"type":"module","scripts":{"test":"node --test test.mjs","dev":"wrangler dev","deploy":"wrangler deploy"},"devDependencies":{"wrangler":"4.131.0"}}
+{"name":"nico-site-backend","private":true,"type":"module","scripts":{"test":"node --test test.mjs","dev":"wrangler dev","deploy":"wrangler deploy"},"devDependencies":{"wrangler":"4.131.0"},"dependencies":{"@anthropic-ai/sdk":"^1.8.0"}}

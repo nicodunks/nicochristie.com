@@ -6,9 +6,9 @@ import {inflateSync} from 'node:zlib';
 import worker,{makePng} from './worker.mjs';
 const origin='https://nicochristie.com';
 function fixture(){
- const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));
+ const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0003_sheets.sql',import.meta.url),'utf8'));
  const DB={prepare(query){const stmt=sql.prepare(query);let args=[];return {bind(...values){args=values.map(x=>x instanceof ArrayBuffer?new Uint8Array(x):x);return this;},async first(){return stmt.get(...args)||null},async all(){return {results:stmt.all(...args)}},async run(){return stmt.run(...args)}}}};
- const env={DB,ALLOWED_ORIGINS:origin+',http://127.0.0.1:8765',IP_SECRET:'test-only-secret',TURNSTILE_SECRET:'test-secret',TURNSTILE_SITEKEY:'test-sitekey',POST_LIMIT:{limit:async()=>({success:true})},VISIT_LIMIT:{limit:async()=>({success:true})}};
+ const env={DB,ALLOWED_ORIGINS:origin+',http://127.0.0.1:8765',IP_SECRET:'test-only-secret',TURNSTILE_SECRET:'test-secret',TURNSTILE_SITEKEY:'test-sitekey',POST_LIMIT:{limit:async()=>({success:true})},VISIT_LIMIT:{limit:async()=>({success:true})},SHEET_LIMIT:{limit:async()=>({success:true})},SHEET_AGENT:'agent_test',SHEET_ENVIRONMENT:'env_test',SHEET_CENTS:'25'};
  const request=(path,data,extra={})=>worker.fetch(new Request('https://api.example'+path,{method:data?'POST':'GET',headers:{origin,'content-type':'application/json','cf-connecting-ip':'192.0.2.1',...extra},body:data?JSON.stringify(data):undefined}),env);
  return {sql,env,request};
 }
@@ -54,4 +54,53 @@ test('database enforces daily limits even under concurrent attempts',async t=>{
 });
 test('edge limiter rejects requests before parsing or database writes',async()=>{
  const {env,request,sql}=fixture();env.POST_LIMIT.limit=async()=>({success:false});assert.equal((await request('/api/wall',{request_id:crypto.randomUUID()})).status,429);assert.equal(sql.prepare('SELECT COUNT(*) n FROM wall_posts').get().n,0);
+});
+
+// A stand-in for the Anthropic client: every session's stream yields `events`, and what is sent to it is kept.
+function fakeClaude(events=[]){
+ const claude={sent:[],made:[],beta:{sessions:{
+  create:async args=>{claude.made.push(args);return {id:'sesn_'+claude.made.length};},
+  events:{stream:async()=>(async function*(){yield* events;})(),send:async(_id,{events})=>{claude.sent.push(...events);}}}}};
+ return claude;
+}
+const turn={picture:'iVBORw0KGgo=',left:0,right:800,top:0,bottom:600,strokes:[{color:'black',points:[[1,2],[3,4]]}],lines:[{text:'Nico Christie',x:16,y:24,width:200,height:37}]};
+test('a new sheet needs the bot check, gets a capped session, and keeps the session id to itself',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude();
+ assert.equal((await request('/api/sheets',{})).status,403);assert.equal(env.CLAUDE.made.length,0);
+ assert.equal((await request('/api/sheets',{token:'ok'},{origin:'https://evil.example'})).status,403);
+ const response=await request('/api/sheets',{token:'ok'});assert.equal(response.status,201);const {sheet}=await response.json();
+ assert.deepEqual(env.CLAUDE.made[0],{agent:'agent_test',environment_id:'env_test',budget:{type:'limit',max_list_cost:{amount:'25',currency:'USD'}}});
+ assert.equal(sql.prepare('SELECT session FROM sheets WHERE id=?').get(sheet).session,'sesn_1');assert.notEqual(sheet,'sesn_1');
+ assert.equal((await request('/api/sheets/sesn_1/turns',turn)).status,404);
+ assert.equal((await request('/api/sheets/'+crypto.randomUUID()+'/turns',turn)).status,404);
+});
+test('the database caps the sheets one connection starts in a day',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
+ for(let i=0;i<8;i++)assert.equal((await request('/api/sheets',{token:'ok'})).status,201);
+ assert.equal((await request('/api/sheets',{token:'ok'})).status,429);assert.equal(env.CLAUDE.made.length,8);
+});
+test('a turn streams the agent\'s ink, drops malformed calls, and ends the turn once ink is on the sheet',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();
+ env.CLAUDE=fakeClaude([{type:'session.status_running'},{type:'span.model_request_start'},
+  {type:'agent.message',content:[{type:'text',text:'never shown'}]},
+  {type:'agent.custom_tool_use',id:'t1',name:'draw',input:{paths:['M 0 0 L 9 9'],color:'red',width:99}},
+  {type:'agent.custom_tool_use',id:'t2',name:'draw',input:{paths:'<script>',color:'red'}},
+  {type:'session.status_idle',stop_reason:{type:'requires_action'}},{type:'agent.custom_tool_use',id:'late',name:'erase',input:{boxes:[]}}]);
+ const {sheet}=await (await request('/api/sheets',{token:'ok'})).json();
+ const response=await request('/api/sheets/'+sheet+'/turns',{...turn,arrived:true});assert.equal(response.status,200);
+ const lines=(await response.text()).trim().split('\n').map(l=>JSON.parse(l));
+ assert.deepEqual(lines,[{doing:'thinking'},{doing:'drawing'},{draw:{paths:['M 0 0 L 9 9'],color:'red',width:30}},{doing:'drawing'},{done:true}]);
+ const [message,first,second,interrupt]=env.CLAUDE.sent;
+ assert.match(message.content[1].text,/Greet them/);assert.match(message.content[1].text,/16,24 200x37: Nico Christie/);assert.match(message.content[1].text,/1\. black: 1,2 3,4/);
+ assert.equal(first.is_error,false);assert.equal(second.is_error,true);assert.equal(interrupt.type,'user.interrupt');
+});
+test('a turn is refused when malformed, and a sheet takes a bounded number of turns',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude([{type:'session.status_running'},{type:'session.status_idle',stop_reason:{type:'end_turn'}}]);
+ const {sheet}=await (await request('/api/sheets',{token:'ok'})).json(),path='/api/sheets/'+sheet+'/turns';
+ assert.equal((await request(path,{...turn,picture:'<svg>'})).status,400);
+ assert.equal((await request(path,{...turn,strokes:[{color:'ultraviolet',points:[[1,2]]}]})).status,400);
+ assert.equal((await request(path,{...turn,lines:[{text:'x'.repeat(401),x:0,y:0,width:1,height:1}]})).status,400);
+ assert.equal((await request(path,turn)).status,200);assert.equal(sql.prepare('SELECT turns FROM sheets WHERE id=?').get(sheet).turns,1);
+ sql.prepare('UPDATE sheets SET turns=40 WHERE id=?').run(sheet);assert.equal((await request(path,turn)).status,429);
+ assert.equal((await request('/api/sheets/'+sheet+'/stop',{})).status,200);assert.equal(env.CLAUDE.sent.at(-1).type,'user.interrupt');
 });

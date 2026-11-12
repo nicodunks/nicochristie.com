@@ -1,0 +1,42 @@
+/* The homepage's sheet: the ink over the page, the tools at the bottom right, and what the agent is doing. */
+
+/* The ink lies over the whole window and lets every click through to the page. It is multiplied onto the page, as
+   ink is onto paper, so the homepage's text stays readable under a highlight. */
+#sheet { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply; z-index: 10; }
+
+/* While the visitor holds the pen or the eraser, a drag draws instead of selecting text or scrolling. */
+html.drawing { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+html.drawing a { cursor: pointer; }
+
+/* the tools: one row of round buttons, each --b wide, where a thumb reaches */
+#tools { --b: 36px; position: fixed; right: 14px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 11;
+  display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 30px; background: #fff;
+  box-shadow: 0 1px 8px rgba(0,0,0,.18); font: 14px -apple-system, system-ui, sans-serif; touch-action: manipulation; }
+#tools button { flex: none; box-sizing: border-box; height: var(--b); min-width: var(--b); padding: 0; display: grid;
+  place-items: center; border-radius: 999px; border: 1px solid #b9b5ab; background: #fff; color: #44423d;
+  font: inherit; cursor: pointer; }
+#tools button:disabled { opacity: .35; }
+#tools svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#tools .on { box-shadow: 0 0 0 2px #44423d; }
+#tools .ink { border: none; }
+#tools.off > :not(.pen):not(#caption) { display: none; }   /* the pen is down: only the button that takes it up shows */
+#tools #send { padding: 0 14px; background: #2c49c9; border-color: #2c49c9; color: #fff; }
+/* the pen is resting: the button fills from the left, and the turn goes when it is full */
+#tools #send.soon { background: linear-gradient(90deg, #1b2f8a 50%, #2c49c9 50%) 100% 0 / 200% 100%; animation: soon var(--rest) linear forwards; }
+#tools #send.stop { background: #c9302c; border-color: #c9302c; }
+#tools [hidden] { display: none; }
+@keyframes soon { to { background-position: 0 0; } }
+
+/* the pen's colours, in a row above the tools */
+#menu { position: absolute; right: 0; bottom: calc(100% + 8px); display: grid; grid-template-columns: repeat(6, var(--b));
+  gap: 6px; padding: 8px; border-radius: 22px; background: #fff; box-shadow: 0 1px 8px rgba(0,0,0,.18); }
+#menu:empty { display: none; }
+
+/* what the agent is doing: it has no box, and reads as pencilled faintly on the sheet */
+#caption { position: absolute; right: 8px; bottom: calc(100% + 6px); white-space: nowrap; display: flex; align-items: center;
+  gap: 8px; font: italic 17px "Bradley Hand", "Noteworthy", "Segoe Print", cursive; color: #2c49c9; opacity: .7; pointer-events: none; }
+#caption:empty { display: none; }
+#caption::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2c49c9; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .2; transform: scale(.7); } }
+
+svg#measure { position: absolute; width: 0; height: 0; visibility: hidden; }

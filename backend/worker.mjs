@@ -1,3 +1,4 @@
+import {sheets} from './sheet.mjs';
 const WIDTH=800, HEIGHT=560, PIXELS=WIDTH*HEIGHT*3, MAX_BODY=PIXELS*4/3+8192;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const encoder=new TextEncoder();
@@ -63,6 +64,7 @@ async function route(request,env){
   if(!row)fail(404,'Not found.');
   return new Response(new Uint8Array(row.image),{headers:{'Content-Type':'image/png','Cache-Control':'public, max-age=300','Content-Security-Policy':"default-src 'none'; sandbox"}});
  }
+ if(path.startsWith('/api/sheets'))return sheets(request,env,path,{fail,json,body,verify,hash});
  if(request.method!=='POST'||!['/api/visits','/api/wall'].includes(path))fail(404,'Not found.');
  if(!origin||!allowed(env).includes(origin))fail(403,'Origin required.');
  if(!env.IP_SECRET)fail(503,'Service not ready.');
@@ -93,6 +95,7 @@ export default{
   let response;try{response=await route(request,env);}catch(error){
    const message=String(error.message);
    if(/post_limit|visit_limit/.test(message))response=json({error:'Daily posting or hourly visit limit reached. Please try later.'},429);
+   else if(/sheet_limit|sheet_busy/.test(message))response=json({error:'No more sheets today. Please try later.'},429);
    else if(/wall_busy|wall_full/.test(message))response=json({error:'The wall is full for now. Please try later.'},429);
    else response=json({error:error instanceof Problem?error.message:'Service unavailable. Please try again.'},error instanceof Problem?error.status:503);
   }
@@ -102,5 +105,9 @@ export default{
   if(origin&&allowed(env).includes(origin)){headers.set('Access-Control-Allow-Origin',origin);headers.set('Access-Control-Allow-Methods','GET,POST,OPTIONS');headers.set('Access-Control-Allow-Headers','Content-Type');headers.set('Access-Control-Max-Age','600');}
   return new Response(response.body,{status:response.status,headers});
  },
- async scheduled(_event,env){await env.DB.prepare('DELETE FROM visits WHERE created_at<?').bind(Math.floor(Date.now()/1000)-172800).run();}
+ async scheduled(_event,env){
+  const old=Math.floor(Date.now()/1000)-172800;
+  await env.DB.prepare('DELETE FROM visits WHERE created_at<?').bind(old).run();
+  await env.DB.prepare('DELETE FROM sheets WHERE created_at<?').bind(old).run();
+ }
 };
