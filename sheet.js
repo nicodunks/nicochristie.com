@@ -505,6 +505,17 @@ function along(d, step = 3) {
   return points;
 }
 
+// Returns the points along a path as its separate lines, each a list of points. A path may lift the pen and set it
+// down elsewhere, with an M in its middle: there the next point is further away than any two points along one line
+// are, and a new line starts.
+function runs(points) {
+  const found = [];
+  points.forEach((p, i) => {
+    if (i && Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) < 6) found.at(-1).push(p); else found.push([p]);
+  });
+  return found;
+}
+
 // Lays out one line of text that may hold maths in LaTeX notation: x^2, z_i, \frac{a}{b}, \sqrt{x}, \hat{y},
 // \bar{x} and names such as \alpha and \sum.
 //
@@ -665,7 +676,7 @@ async function turn(arrived = false) {
   const add = m => { marks.push(Object.assign(m, {draft: true, shown: 0})); added(m); grow(); drawing = drawing.then(() => reveal(m)); };
   const steps = {
     draw: ({paths, color, width}) => {
-      for (const d of paths) { const points = along(d); if (points.length) add({color, points, pen: width}); }
+      for (const d of paths) for (const points of runs(along(d))) add({color, points, pen: width});
     },
     write: texts => { for (const t of texts) written(t).forEach(add); },
     erase: boxes => { for (const rub of boxes) { const m = {rub}; marks.push(m); added(m); } redraw(); },
