@@ -3,7 +3,7 @@
 //
 //   POST /api/sheets                 a new sheet, {token}: the Turnstile token of the visitor. Returns {sheet: its id}
 //   POST /api/sheets/<sheet>/turns   the visitor's turn, {picture, left, right, top, bottom, strokes, lines, said,
-//                                    undone, greeted, zoom}
+//                                    greeted, zoom}
 //   POST /api/sheets/<sheet>/looks   the parts of the sheet the agent asked to see, {looks: [{id, picture, left,
 //                                    right, top, bottom}]}
 //   POST /api/sheets/<sheet>/stop    ends the agent's turn, whatever the agent is doing
@@ -48,7 +48,6 @@ export function told(turn) {
   if (g) lines.push("The visitor has just opened the homepage, or opened it again, which wiped the sheet clean. " +
     `The page greeted them for you with a small happy face in ${g.color}, in the box from x = ${n(g.x)} to ${n(g.x + g.width)} ` +
     `and y = ${n(g.y)} to ${n(g.y + g.height)}. It is your ink. This is the first thing they drew back.`);
-  if (turn.undone) lines.push(`The visitor took back ${turn.undone} of their strokes that you saw before.`);
   lines.push(`The picture shows the sheet from x = ${n(turn.left)} to x = ${n(turn.right)} and from y = ${n(turn.top)} to y = ${n(turn.bottom)}.`);
   lines.push(`The visitor's view is at zoom ${(turn.zoom ?? 1).toFixed(2)}.`, "");
   lines.push("The homepage's text, as x,y of each line's top left corner, its width x height, and its words:");
@@ -171,7 +170,6 @@ function checked(turn, fail) {
   if (turn.greeted != null && !(SIDES.every(k => number(turn.greeted[k])) && typeof turn.greeted.color === "string" && Object.hasOwn(COLORS, turn.greeted.color))) fail(400, "Invalid turn.");
   if (turn.said !== undefined && !(Array.isArray(turn.said) && turn.said.length <= 20 && turn.said.every(t => typeof t === "string" && t.length <= 2000))) fail(400, "Invalid turn.");
   if (turn.zoom !== undefined && !(number(turn.zoom) && turn.zoom > 0)) fail(400, "Invalid turn.");
-  if (turn.undone !== undefined && !(Number.isInteger(turn.undone) && turn.undone >= 0)) fail(400, "Invalid turn.");
 }
 
 // Answers one request under /api/sheets. `tools` are the Worker's own helpers: fail, json, body, verify and hash.

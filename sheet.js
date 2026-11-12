@@ -86,8 +86,6 @@ document.documentElement.style.setProperty("--rest", REST + "ms");
 
 let marks = [];        // everything on the sheet, in the order it was made
 let made = [];         // the strokes on the sheet, in the order they were made
-let mine = [];         // the visitor's marks, in the order they made them: what Undo takes back
-let gone = 0;          // how many marks the agent has seen that the visitor took back since the agent's last turn
 let fresh = [];        // the visitor's marks the agent has not seen yet
 let notes = [];        // everything the visitor said, in the order they said it
 let heard = null;      // the spoken note the visitor is speaking now
@@ -166,13 +164,6 @@ function reach(m) {
 }
 
 // ---- what is left of each stroke ----
-
-// Works out the ink of every stroke from the marks in the order they were made. Done when a mark is taken back; a
-// new mark only needs added().
-function settle() {
-  made = [];
-  for (const m of marks) { delete m.reach; added(m); }
-}
 
 // Works out what a new mark does to the ink: a stroke starts as its whole line, a wipe or a rub cuts away what it
 // covers of the strokes before it, and a move moves the strokes before it that it takes.
@@ -433,7 +424,7 @@ function lift(e) {
   if (!stroke || e.pointerId !== stroke.pointer) return;
   const {pointer, kind, ink, ...done} = stroke;
   stroke = null;
-  marks.push(done); mine.push(done); fresh.push(done);
+  marks.push(done); fresh.push(done);
   added(done); grow();
   redraw(); ready();
 }
@@ -442,7 +433,7 @@ addEventListener("pointercancel", lift);
 
 // ---- the visitor's tools ----
 
-// The tools, at the bottom right, always there: the pen, the eraser, Undo, the pen's colour, Speak and Send. Tapping
+// The tools, at the bottom right, always there: the pen, the eraser, the pen's colour, Speak and Send. Tapping
 // the pen or the eraser takes it up, and tapping the one held puts it down: then the page is a plain page again.
 // Tapping the colour opens the colours above the tools.
 function button(kind, title, act, into = tools) {
@@ -453,8 +444,6 @@ function button(kind, title, act, into = tools) {
 const drawer = button("pen", "Draw", () => hold("pen")), rubber = button("wipe", "Erase", () => hold("wipe"));
 drawer.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z M14 7l3 3"/></svg>';
 rubber.innerHTML = '<svg viewBox="0 0 24 24"><path d="M10 19l-6-6L14 3l7 7-9 9z M8 9l7 7 M10 19h10"/></svg>';
-const back = button("step", "Undo", undo);
-back.textContent = "↶";
 const dot = button("ink", "Colour", () => {
   if (menu.children.length) { menu.replaceChildren(); return; }
   for (const color in COLORS) button("ink", color, () => { chosen = color; holds = ""; hold("pen"); }, menu).style.background = COLORS[color];
@@ -535,21 +524,12 @@ function hold(what) {
   dot.style.background = COLORS[chosen];
 }
 
-// Undo takes back the visitor's last mark.
-function undo() {
-  const m = mine.pop();
-  marks = marks.filter(x => x !== m);
-  if (m.seen) gone++; else fresh = fresh.filter(f => f !== m);
-  settle(); redraw(); ready();
-}
-
-// Sets which buttons are live. Send is live when the visitor has drawn, rubbed out, taken back or said something
+// Sets which buttons are live. Send is live when the visitor has drawn, rubbed out or said something
 // the agent has not been told of, and they are not speaking. While a turn is with the agent, Send reads Stop.
 function ready() {
   const said = notes.some(n => !n.sent);
   send.textContent = busy ? "Stop" : "Send"; send.className = busy ? "stop" : "";
-  send.disabled = !busy && (dead || heard !== null || !(fresh.length || gone || said));
-  back.disabled = !mine.length;
+  send.disabled = !busy && (dead || heard !== null || !(fresh.length || said));
   // the turn goes by itself once the pen has rested, when there are new marks or words for the agent
   clearTimeout(soon);
   if (!busy && !send.disabled && !stroke && !scrolling && (fresh.length || said)) { void send.offsetWidth; send.className = "soon"; soon = setTimeout(turn, REST); }
@@ -754,9 +734,9 @@ async function turn() {
   if (!sheet) { note(""); busy = false; ready(); return false; }
   const strokes = fresh.map(({color, wipe, points}) => ({color, wipe, points: simplify(points)}));
   const saying = notes.filter(n => !n.sent);
-  const body = {...picture(), strokes, lines: lines(), said: saying.map(n => n.text), undone: gone, greeted, zoom};
+  const body = {...picture(), strokes, lines: lines(), said: saying.map(n => n.text), greeted, zoom};
   for (const m of fresh) m.seen = true;
-  fresh = []; gone = 0; greeted = null;
+  fresh = []; greeted = null;
   for (const n of saying) { n.sent = true; n.open = false; }
   list(); ready();
   let drawing = Promise.resolve(), asked = [], over = false;

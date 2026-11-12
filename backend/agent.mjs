@@ -32,7 +32,6 @@ or write is in these units.
 - The strokes the visitor made since your last turn, in the order they made them. A stroke of their pen is its
   colour and a list of x,y points. A stroke of their eraser is the eraser's width and a list of x,y points: the ink
   it passed over is gone from the sheet. The eraser never rubs out the homepage's text.
-- Whether they took back strokes that you saw on an earlier turn. Those strokes are gone from the sheet.
 - What they said aloud since your last turn, when they said anything. A machine wrote their words down as they
   spoke, so a word may be wrong: take the meaning that fits the sheet.
 
