@@ -39,7 +39,7 @@ const LANDED = "Someone landed on the page!";
  * What the agent's welcome may be about: each visit is given one of Nico's themes, picked by chance, so that visits
  * differ. A theme is only a subject: what the agent draws of it is left to the agent.
  */
-const THEMES = ["Miami", "birds", "the beach"];
+const THEMES = ["Miami", "birds", "the beach", "Dragon Ball Z"];
 let opening = false; // the next turn is the one that opens the visit
 
 /** Returns the lines numbered from 1. */
