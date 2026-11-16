@@ -36,10 +36,10 @@ let stopper = new AbortController();
 /** What the agent is told first in the turn that opens a visit, before the person has done anything. */
 const LANDED = "Someone landed on the page!";
 /**
- * What the agent's welcome may be about: each visit is given one of Nico's themes, picked by chance, so that visits
- * differ. A theme is only a subject: what the agent draws of it is left to the agent.
+ * What the agent's welcome is about: Nico's one theme, the birds of Miami. It is only a subject: what the agent draws
+ * of it is left to the agent. A second theme added here would be picked from by chance, one for each visit.
  */
-const THEMES = ["birds and bird watching", "space and rockets", "the beach", "Miami"];
+const THEMES = ["Miami birds"];
 let opening = false; // the next turn is the one that opens the visit
 
 /** Returns the lines numbered from 1. */
