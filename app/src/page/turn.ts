@@ -16,7 +16,7 @@ import { type Picture, Refused } from "../agent/loop.ts";
 import { type Op, apply } from "../paint/ops.ts";
 import { shrunk } from "../run/files.ts";
 import { type Need, Run } from "../run/run.ts";
-import { post } from "./account.ts";
+import { check, post } from "./account.ts";
 import { described, shotAt, start, sync, tried } from "./animations.ts";
 import { chosenEffort, chosenMode, chosenModel } from "./model.ts";
 import { say } from "./caption.ts";
@@ -99,6 +99,7 @@ async function turn(): Promise<void> {
     seen = picture(inView());
   const first = opening; // this turn opens the visit: the person did not ask for it, so nothing it fails with is shown
   opening = false;
+  check.quiet = first;
   const words =
     (first ? `${LANDED} Welcome them with a small drawing on the theme of ${THEMES[Math.floor(Math.random() * THEMES.length)]}: what you draw of it is up to you, so surprise them. Draw it inside what the picture shows, and do not move their view: do not call show() in this turn.\n\n` : "") +
     told(

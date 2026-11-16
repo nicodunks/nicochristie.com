@@ -1,7 +1,8 @@
 /**
  * The page's requests to the gateway, the Worker at API. No one signs in: anyone can draw and send. The gateway takes
  * a drawing's first request only with a Turnstile token, which proves a browser and not a script sent it, so when the
- * gateway answers 403 with the header x-check, post() gets a token, without showing anything, and asks again.
+ * gateway answers 403 with the header x-check, post() gets a token and asks again. Getting one shows nothing, unless
+ * Turnstile has a question for the person (check, below).
  */
 import { drawing } from "./state.ts";
 
@@ -20,7 +21,14 @@ declare const turnstile: Turnstile;
 
 let script: Promise<void> | undefined, sitekey: Promise<string> | undefined;
 
-/** Resolves with a Turnstile token for the action "sheet"; fails if Turnstile would stop to question the person. */
+/**
+ * Whether the bot check stays out of sight. The turn that opens a visit sets `quiet`, since the person did not ask for
+ * it: then a check that would stop to question the person fails instead. Otherwise such a check shows its box at the
+ * top of the window, for the person to answer, and the request goes on once they have.
+ */
+export const check = { quiet: false };
+
+/** Resolves with a Turnstile token for the action "sheet"; fails if the check fails, or is quiet and has a question. */
 async function token(): Promise<string> {
   script ??= new Promise((done, fail) => {
     const s = document.createElement("script");
@@ -38,8 +46,10 @@ async function token(): Promise<string> {
   sitekey.catch(() => (sitekey = undefined));
   const [key] = await Promise.all([sitekey, script]);
   return new Promise((done, fail) => {
-    const box = document.createElement("div");
-    box.hidden = true;
+    const box = document.createElement("div"),
+      quiet = check.quiet;
+    box.id = "check";
+    box.hidden = quiet;
     document.body.append(box);
     let widget: string | undefined;
     const end = (error?: Error, got?: string) => {
@@ -49,14 +59,14 @@ async function token(): Promise<string> {
       if (error) fail(error);
       else done(got!);
     };
-    const timer = setTimeout(() => end(new Error("the bot check took too long")), 60_000);
+    const timer = setTimeout(() => end(new Error("the bot check took too long")), 120_000);
     widget = turnstile.render(box, {
       sitekey: key,
       action: "sheet",
       appearance: "interaction-only",
       callback: (got: string) => end(undefined, got),
       "error-callback": () => end(new Error("the bot check failed")),
-      "before-interactive-callback": () => end(new Error("the bot check wants an answer")),
+      ...(quiet && { "before-interactive-callback": () => end(new Error("the bot check wants an answer")) }),
     });
   });
 }

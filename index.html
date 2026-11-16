@@ -98,6 +98,17 @@
       #sheet.hand.held {
         cursor: grabbing;
       }
+      /* the bot check's box, which shows only when the check has a question for the person (account.ts) */
+      #check {
+        position: fixed;
+        top: 72px;
+        left: 50%;
+        translate: -50% 0;
+        z-index: 5;
+      }
+      #check[hidden] {
+        display: none;
+      }
       /* the paper's grain, very faint clouds of digits (backdrop.ts) */
       #grain {
         position: absolute;
