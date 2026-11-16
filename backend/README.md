@@ -17,29 +17,17 @@ The local preview and the future GitHub Pages frontend use the API URL in `../ba
 
 ## The homepage's sheet
 
-The homepage is one sheet of paper that the visitor and a Claude agent both draw on. When the homepage opens, the page itself draws a small happy face in a colour picked at random, with no request to anyone. When the visitor draws back, the agent answers. `../sheet.js` is the page's side, `sheet.mjs` is the Worker's side, and `agent.mjs` holds the agent's model, prompt and tools.
+The homepage is the drawing agent's page from offpolicyinc.com/draw, without its accounts: one sheet of paper that the visitor and a Claude agent both draw on. The sheet opens with the words about Nico in the agent's handwriting, as the agent's own ink, so the agent can move, erase or rewrite them. The page's source is `../app/` (`src/page/about.ts` holds the words), and `cd ../app && npm install && npm run build` builds it into `../index.html` and `../draw/`, which are committed because GitHub Pages builds nothing. `draw/` here is the Worker's side: `index.ts` is the gateway, `agent.ts` holds the models, the prompt and the tool, and `reference.json` is the paint API the prompt shows the agent, which the page's build writes.
 
-- Each visitor's sheet is one session of a Claude Managed Agent, started by `POST /api/sheets` at the visitor's first stroke, so a visitor who only reads costs nothing. The session's id stays in the database and never reaches the browser, which gets a random sheet id instead.
-- A new sheet needs a Turnstile token with the action `sheet`. The widget never shows: a visitor Turnstile would stop to question gets no sheet instead. When the check, the Worker or the agent fails, the homepage is a plain homepage without ink.
-- One internet connection may start 30 sheets per rolling 24 hours, and all visitors together 200. The database refuses a sheet over either cap before any session is paid for.
-- Each sheet's session may spend at most `SHEET_CENTS` (25 cents) at list prices, enforced by Anthropic, and takes at most 40 turns. All sheet requests share a limit of 30 per minute per connection.
-- The agent has only the page tools: draw, handwrite, erase, move, zoom, scroll and look. It has no shell, no files and no web. What the agent says outside these tools is dropped.
-- A reload wipes the ink, the page greets the visitor again, and the next stroke starts a new sheet. A new sheet always uses the agent's newest version, where a kept one would go on with the version it started with.
-- The visitor can also speak: while they hold Speak, the browser's own speech recogniser writes down their words, and the words go to the agent with the turn. The page keeps no sound.
-- Every turn the agent is given a list of all the ink on the sheet that says whose each piece is, so it does not have to tell its own ink from the visitor's by colour.
-- The sheet zooms between 0.2 and 1. A wide window opens at 1 and a phone at 0.7, the visitor zooms with two fingers, and the agent zooms with its zoom tool.
+- The page keeps the sheet and the conversation in the visitor's browser and runs the code the agent writes, in two Web Workers. The gateway only adds the key, the prompt and the tool, and passes the conversation to Claude's Messages API with the Worker's `ANTHROPIC_API_KEY`. The visitor chooses Sonnet or Haiku.
+- No one signs in. A drawing's first request needs a Turnstile token with the action `sheet`. The widget never shows: a visitor Turnstile would stop to question cannot send, and can still draw.
+- One internet connection may start 30 drawings per rolling 24 hours, and all visitors together 200.
+- Each call to the model is a row of `draw_calls` with its cost at list prices. A drawing may spend `DRAW_PAGE_CENTS` (50 cents), a connection `DRAW_IP_CENTS` ($1.50) per rolling day, and all visitors together `DRAW_DAY_CENTS` ($20) per rolling day. A turn costs about 4 cents on Sonnet. All drawing requests share a limit of 60 per minute per connection.
+- The agent's code can search the web only if the secret `BRAVE_API_KEY` is set, and can download single files of at most 10 MB through the gateway.
+- A reload wipes the drawing: the page always opens on a new sheet with the words about Nico, as Clear does.
+- The blue words are links: `../app/src/page/links.ts` opens a link when its ink is tapped.
 
-To set the agent up once, with the personal Anthropic key:
-
-```sh
-cd backend
-ANTHROPIC_API_KEY=... node setup.mjs setup          # makes the agent and writes its two ids into wrangler.json
-npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler d1 migrations apply nico-personal-site --remote
-npm run deploy
-```
-
-After changing the prompt or the tools in `agent.mjs`, run `ANTHROPIC_API_KEY=... node setup.mjs update`. The key's workspace should have a monthly spend limit in the Anthropic Console: the caps above bound the cost to about $50 a day at worst, and the workspace limit is the backstop.
+The key's workspace should have a monthly spend limit in the Anthropic Console: the caps above bound the cost to about $20 a day, and the workspace limit is the backstop. The Managed Agent the sheet used before (`setup.mjs`) is no longer called and can be archived in the Console.
 
 ## Development and deployment
 

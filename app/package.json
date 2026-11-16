@@ -1,0 +1,25 @@
+{
+  "name": "nico-homepage-sheet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
+    "p5": "1.11.13",
+    "p5.brush": "3.0.0"
+  },
+  "devDependencies": {
+    "acorn": "^8.19.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "p5.brush": {
+      "p5": "$p5"
+    }
+  }
+}

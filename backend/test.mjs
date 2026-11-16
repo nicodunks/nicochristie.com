@@ -4,12 +4,11 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {inflateSync} from 'node:zlib';
 import worker,{makePng} from './worker.mjs';
-import {ink} from './sheet.mjs';
 const origin='https://nicochristie.com';
 function fixture(){
- const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0003_sheets.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0004_sheet_cap.sql',import.meta.url),'utf8'));
+ const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('./migrations/0001.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0002_starting_count.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0003_sheets.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0004_sheet_cap.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('./migrations/0005_draw.sql',import.meta.url),'utf8'));
  const DB={prepare(query){const stmt=sql.prepare(query);let args=[];return {bind(...values){args=values.map(x=>x instanceof ArrayBuffer?new Uint8Array(x):x);return this;},async first(){return stmt.get(...args)||null},async all(){return {results:stmt.all(...args)}},async run(){return stmt.run(...args)}}}};
- const env={DB,ALLOWED_ORIGINS:origin+',http://127.0.0.1:8765',IP_SECRET:'test-only-secret',TURNSTILE_SECRET:'test-secret',TURNSTILE_SITEKEY:'test-sitekey',POST_LIMIT:{limit:async()=>({success:true})},VISIT_LIMIT:{limit:async()=>({success:true})},SHEET_LIMIT:{limit:async()=>({success:true})},SHEET_AGENT:'agent_test',SHEET_ENVIRONMENT:'env_test',SHEET_CENTS:'25'};
+ const env={DB,ALLOWED_ORIGINS:origin+',http://127.0.0.1:8765',IP_SECRET:'test-only-secret',TURNSTILE_SECRET:'test-secret',TURNSTILE_SITEKEY:'test-sitekey',POST_LIMIT:{limit:async()=>({success:true})},VISIT_LIMIT:{limit:async()=>({success:true})},DRAW_LIMIT:{limit:async()=>({success:true})},DRAW_PAGE_CENTS:'50',DRAW_IP_CENTS:'150',DRAW_DAY_CENTS:'2000'};
  const request=(path,data,extra={})=>worker.fetch(new Request('https://api.example'+path,{method:data?'POST':'GET',headers:{origin,'content-type':'application/json','cf-connecting-ip':'192.0.2.1',...extra},body:data?JSON.stringify(data):undefined}),env);
  return {sql,env,request};
 }
@@ -57,55 +56,54 @@ test('edge limiter rejects requests before parsing or database writes',async()=>
  const {env,request,sql}=fixture();env.POST_LIMIT.limit=async()=>({success:false});assert.equal((await request('/api/wall',{request_id:crypto.randomUUID()})).status,429);assert.equal(sql.prepare('SELECT COUNT(*) n FROM wall_posts').get().n,0);
 });
 
-// A stand-in for the Anthropic client: every session's stream yields `events`, and what is sent to it is kept.
-function fakeClaude(events=[]){
- const claude={sent:[],made:[],beta:{sessions:{
-  create:async args=>{claude.made.push(args);return {id:'sesn_'+claude.made.length};},
-  events:{stream:async()=>(async function*(){yield* events;})(),send:async(_id,{events})=>{claude.sent.push(...events);}}}}};
+// A stand-in for the Anthropic client: every call streams one reply that used `usage`, and what it was asked is kept.
+function fakeClaude(usage={input_tokens:1000,output_tokens:100}){
+ const reply={id:'msg_1',type:'message',role:'assistant',model:'m',content:[{type:'text',text:'ok'}],stop_reason:'end_turn',usage};
+ const claude={asked:[],messages:{stream(args){claude.asked.push(args);return {abort(){},finalMessage:async()=>reply,withResponse:async()=>({}),toReadableStream:()=>new Response('{"type":"message_stop"}\n').body};}}};
  return claude;
 }
-const turn={picture:'iVBORw0KGgo=',left:0,right:800,top:0,bottom:600,strokes:[{color:'black',points:[[1,2],[3,4]]}],lines:[{text:'Nico Christie',x:16,y:24,width:200,height:37}],ink:[{by:'agent',color:'pink',what:'the happy face the page greeted with',x:40,y:400,width:60,height:60},{by:'visitor',color:'black',what:'1 stroke',x:1,y:2,width:2,height:2}]};
-test('a new sheet needs the bot check, gets a capped session, and keeps the session id to itself',async t=>{
+const call={page:'2026-11-16T00-00-00-000Z-abcd',model:'Sonnet',messages:[{role:'user',content:[{type:'text',text:'draw a cat'}]}]};
+const settled=()=>new Promise(r=>setTimeout(r,10));
+test('a drawing\'s first request needs the bot check, and its later ones do not',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude();
- assert.equal((await request('/api/sheets',{})).status,403);assert.equal(env.CLAUDE.made.length,0);
- assert.equal((await request('/api/sheets',{token:'ok'},{origin:'https://evil.example'})).status,403);
- const response=await request('/api/sheets',{token:'ok'});assert.equal(response.status,201);const {sheet}=await response.json();
- assert.deepEqual(env.CLAUDE.made[0],{agent:'agent_test',environment_id:'env_test',budget:{type:'limit',max_list_cost:{amount:'25',currency:'USD'}}});
- assert.equal(sql.prepare('SELECT session FROM sheets WHERE id=?').get(sheet).session,'sesn_1');assert.notEqual(sheet,'sesn_1');
- assert.equal((await request('/api/sheets/sesn_1/turns',turn)).status,404);
- assert.equal((await request('/api/sheets/'+crypto.randomUUID()+'/turns',turn)).status,404);
+ const unchecked=await request('/api/draw/messages',call);assert.equal(unchecked.status,403);assert.equal(unchecked.headers.get('x-check'),'1');assert.equal(unchecked.headers.get('access-control-expose-headers'),'x-check');assert.equal(env.CLAUDE.asked.length,0);
+ assert.equal((await request('/api/draw/messages',{...call,token:'ok'},{origin:'https://evil.example'})).status,403);
+ const first=await request('/api/draw/messages',{...call,token:'ok'});assert.equal(first.status,200);assert.equal(await first.text(),'{"type":"message_stop"}\n');
+ assert.equal((await request('/api/draw/messages',call)).status,200);
+ const asked=env.CLAUDE.asked[0];assert.equal(asked.model,'claude-sonnet-5-5');assert.match(asked.system,/homepage of Nico Christie/);assert.match(asked.system,/declare function write|function write\(/);assert.equal(asked.tools[0].name,'run');assert.deepEqual(asked.messages,call.messages);
+ await settled();assert.deepEqual(sql.prepare('SELECT micros FROM draw_calls').all().map(r=>r.micros),[3000,3000]);
 });
-test('the database caps the sheets one connection starts in a day',async t=>{
+test('a call is refused when malformed or for a model the page does not have',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
- for(let i=0;i<30;i++)assert.equal((await request('/api/sheets',{token:'ok'})).status,201);
- assert.equal((await request('/api/sheets',{token:'ok'})).status,429);assert.equal(env.CLAUDE.made.length,30);
+ assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Luna'})).status,422);
+ assert.equal((await request('/api/draw/messages',{...call,messages:[]})).status,422);
+ assert.equal((await request('/api/draw/messages',{...call,mode:'oils'})).status,422);
+ assert.equal((await request('/api/draw/messages',{...call,page:'../x'})).status,422);
+ assert.equal((await request('/api/draw/record',call)).status,404);assert.equal(env.CLAUDE.asked.length,0);
 });
-test('a turn streams the agent\'s ink, drops malformed calls, and ends the turn once ink is on the sheet',async t=>{
- mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();
- env.CLAUDE=fakeClaude([{type:'session.status_running'},{type:'span.model_request_start'},
-  {type:'agent.message',content:[{type:'text',text:'never shown'}]},
-  {type:'agent.custom_tool_use',id:'t1',name:'draw',input:{paths:['M 0 0 L 9 9'],color:'red',width:99}},
-  {type:'agent.custom_tool_use',id:'t2',name:'draw',input:{paths:'<script>',color:'red'}},
-  {type:'session.status_idle',stop_reason:{type:'requires_action'}},{type:'agent.custom_tool_use',id:'late',name:'erase',input:{boxes:[]}}]);
- const {sheet}=await (await request('/api/sheets',{token:'ok'})).json();
- const response=await request('/api/sheets/'+sheet+'/turns',{...turn,said:['draw a cat'],greeted:{color:'pink',x:40,y:400,width:60,height:60}});assert.equal(response.status,200);
- const lines=(await response.text()).trim().split('\n').map(l=>JSON.parse(l));
- assert.deepEqual(lines,[{doing:'thinking'},{doing:'drawing'},{draw:{paths:['M 0 0 L 9 9'],color:'red',width:30}},{doing:'drawing'},{done:true}]);
- const [message,first,second,interrupt]=env.CLAUDE.sent;
- assert.match(message.content[1].text,/yours, pink: the happy face the page greeted with\. x = 40 to 100, y = 400 to 460\ntheirs, black: 1 stroke/);assert.match(message.content[1].text,/The visitor said:\n1\. draw a cat/);assert.match(message.content[1].text,/a small happy face in pink, in the box from x = 40 to 100/);assert.match(message.content[1].text,/16,24 200x37: Nico Christie/);assert.match(message.content[1].text,/1\. black: 1,2 3,4/);
- assert.equal(first.is_error,false);assert.equal(second.is_error,true);assert.equal(interrupt.type,'user.interrupt');
+test('a drawing, a connection and a day each spend only up to their cap',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude();
+ const now=Math.floor(Date.now()/1000),spend=(page,ip,micros)=>sql.prepare('INSERT INTO draw_calls VALUES(?,?,?,?,?)').run(crypto.randomUUID(),page,ip,micros,now);
+ assert.equal((await request('/api/draw/messages',{...call,token:'ok'})).status,200);await settled();
+ spend(call.page,'elsewhere',500000);const full=await request('/api/draw/messages',call);assert.equal(full.status,402);assert.match(await full.text(),/Clear starts a new one/);
+ const other={...call,page:'another-drawing',token:'ok'};assert.equal((await request('/api/draw/messages',other)).status,200);await settled();
+ const mine=sql.prepare('SELECT ip_hash FROM draw_pages WHERE page=?').get(call.page).ip_hash;spend('a-third',mine,1500000);
+ const tired=await request('/api/draw/messages',other);assert.equal(tired.status,402);assert.match(await tired.text(),/come back tomorrow/);
+ sql.prepare('DELETE FROM draw_calls').run();spend('everyone','elsewhere',20000000);assert.equal((await request('/api/draw/messages',other)).status,402);
+ assert.equal(env.CLAUDE.asked.length,2);
 });
-test('a turn is refused when malformed, and a sheet takes a bounded number of turns',async t=>{
- mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude([{type:'session.status_running'},{type:'session.status_idle',stop_reason:{type:'end_turn'}}]);
- const {sheet}=await (await request('/api/sheets',{token:'ok'})).json(),path='/api/sheets/'+sheet+'/turns';
- assert.equal((await request(path,{...turn,picture:'<svg>'})).status,400);
- assert.equal((await request(path,{...turn,strokes:[{color:'ultraviolet',points:[[1,2]]}]})).status,400);
- assert.equal((await request(path,{...turn,lines:[{text:'x'.repeat(401),x:0,y:0,width:1,height:1}]})).status,400);
- assert.equal((await request(path,turn)).status,200);assert.equal(sql.prepare('SELECT turns FROM sheets WHERE id=?').get(sheet).turns,1);
- sql.prepare('UPDATE sheets SET turns=40 WHERE id=?').run(sheet);assert.equal((await request(path,turn)).status,429);
- assert.equal((await request('/api/sheets/'+sheet+'/stop',{})).status,200);assert.equal(env.CLAUDE.sent.at(-1).type,'user.interrupt');
+test('the database caps the drawings one connection starts in a day',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
+ for(let i=0;i<30;i++)assert.equal((await request('/api/draw/messages',{...call,page:'drawing-'+i,token:'ok'})).status,200);
+ const over=await request('/api/draw/messages',{...call,page:'drawing-30',token:'ok'});assert.equal(over.status,402);assert.match(await over.text(),/come back tomorrow/);
 });
-test('the agent scrolls and zooms the view within bounds',()=>{
- assert.deepEqual(ink('scroll',{y:640}),{scroll:{y:640}});assert.deepEqual(ink('scroll',{x:-300,y:-50}),{scroll:{x:-300,y:0}});assert.equal(ink('scroll',{y:'down'}),null);assert.equal(ink('scroll',{}),null);
- assert.deepEqual(ink('zoom',{zoom:0.01}),{zoom:0.2});assert.deepEqual(ink('zoom',{zoom:5}),{zoom:1});
+test('without OpenAI\'s key the brush\'s model is Sonnet',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
+ assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Sol',mode:'brush'})).status,200);
+ assert.equal(env.CLAUDE.asked[0].model,'claude-sonnet-5-5');assert.match(env.CLAUDE.asked[0].system,/Paint with brush/);
+});
+test('the agent\'s code searches only where search is set up',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
+ assert.equal((await request('/api/draw/search',{page:call.page,endpoint:'web',params:{q:'whale'}})).status,403);
+ assert.equal((await request('/api/draw/search',{page:call.page,token:'ok',endpoint:'web',params:{q:'whale'}})).status,503);
 });

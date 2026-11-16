@@ -7,9 +7,9 @@
   "vars": {
     "ALLOWED_ORIGINS": "https://nicochristie.com,https://www.nicochristie.com,https://nicodunks.github.io,http://127.0.0.1:8765,http://localhost:8765",
     "TURNSTILE_SITEKEY": "0x4AAAAAAEvf4CuJzJmnzawb",
-    "SHEET_AGENT": "agent_01G9xfjZyWsrAuAwaxqnC9G8",
-    "SHEET_ENVIRONMENT": "env_01R5mzzvEw9fc7HHMvxVHAqN",
-    "SHEET_CENTS": "25"
+    "DRAW_PAGE_CENTS": "50",
+    "DRAW_IP_CENTS": "150",
+    "DRAW_DAY_CENTS": "2000"
   },
   "d1_databases": [
     {
@@ -37,10 +37,10 @@
       }
     },
     {
-      "name": "SHEET_LIMIT",
-      "namespace_id": "916503",
+      "name": "DRAW_LIMIT",
+      "namespace_id": "916504",
       "simple": {
-        "limit": 30,
+        "limit": 60,
         "period": 60
       }
     }

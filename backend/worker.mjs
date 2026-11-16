@@ -1,4 +1,4 @@
-import {sheets} from './sheet.mjs';
+import {draw} from './draw/index.ts';
 const WIDTH=800, HEIGHT=560, PIXELS=WIDTH*HEIGHT*3, MAX_BODY=PIXELS*4/3+8192;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const encoder=new TextEncoder();
@@ -48,7 +48,7 @@ export async function makePng(encoded){
  const png=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let offset=0;for(const p of parts){png.set(p,offset);offset+=p.length;}return png;
 }
 function text(value,fallback,max){if(value===undefined||value==='')return fallback;if(typeof value!=='string'||value.length>max)fail(400,'Title or name is too long.');return value.trim()||fallback;}
-async function route(request,env){
+async function route(request,env,ctx){
  const url=new URL(request.url),path=url.pathname,origin=request.headers.get('origin');
  if(origin&&!allowed(env).includes(origin))fail(403,'Origin not allowed.');
  if(request.method==='OPTIONS')return new Response(null,{status:204});
@@ -64,7 +64,7 @@ async function route(request,env){
   if(!row)fail(404,'Not found.');
   return new Response(new Uint8Array(row.image),{headers:{'Content-Type':'image/png','Cache-Control':'public, max-age=300','Content-Security-Policy':"default-src 'none'; sandbox"}});
  }
- if(path.startsWith('/api/sheets'))return sheets(request,env,path,{fail,json,body,verify,hash});
+ if(path.startsWith('/api/draw/'))return draw(request,env,ctx,path,{body,verify,hash});
  if(request.method!=='POST'||!['/api/visits','/api/wall'].includes(path))fail(404,'Not found.');
  if(!origin||!allowed(env).includes(origin))fail(403,'Origin required.');
  if(!env.IP_SECRET)fail(503,'Service not ready.');
@@ -91,23 +91,23 @@ async function route(request,env){
  return json(await env.DB.prepare('SELECT id FROM wall_posts WHERE request_id=?').bind(data.request_id).first(),201);
 }
 export default{
- async fetch(request,env){
-  let response;try{response=await route(request,env);}catch(error){
+ async fetch(request,env,ctx){
+  let response;try{response=await route(request,env,ctx);}catch(error){
    const message=String(error.message);
    if(/post_limit|visit_limit/.test(message))response=json({error:'Daily posting or hourly visit limit reached. Please try later.'},429);
-   else if(/sheet_limit|sheet_busy/.test(message))response=json({error:'No more sheets today. Please try later.'},429);
    else if(/wall_busy|wall_full/.test(message))response=json({error:'The wall is full for now. Please try later.'},429);
    else response=json({error:error instanceof Problem?error.message:'Service unavailable. Please try again.'},error instanceof Problem?error.status:503);
   }
   const headers=new Headers(response.headers),origin=request.headers.get('origin');
   headers.set('X-Content-Type-Options','nosniff');headers.set('Referrer-Policy','no-referrer');headers.set('Vary','Origin');
   if(!headers.has('Cache-Control'))headers.set('Cache-Control','no-store');
-  if(origin&&allowed(env).includes(origin)){headers.set('Access-Control-Allow-Origin',origin);headers.set('Access-Control-Allow-Methods','GET,POST,OPTIONS');headers.set('Access-Control-Allow-Headers','Content-Type');headers.set('Access-Control-Max-Age','600');}
+  if(origin&&allowed(env).includes(origin)){headers.set('Access-Control-Allow-Origin',origin);headers.set('Access-Control-Allow-Methods','GET,POST,OPTIONS');headers.set('Access-Control-Allow-Headers','Content-Type');headers.set('Access-Control-Expose-Headers','x-check');headers.set('Access-Control-Max-Age','600');}
   return new Response(response.body,{status:response.status,headers});
  },
  async scheduled(_event,env){
   const old=Math.floor(Date.now()/1000)-172800;
   await env.DB.prepare('DELETE FROM visits WHERE created_at<?').bind(old).run();
-  await env.DB.prepare('DELETE FROM sheets WHERE created_at<?').bind(old).run();
+  await env.DB.prepare('DELETE FROM draw_pages WHERE created_at<?').bind(old).run();
+  await env.DB.prepare('DELETE FROM draw_calls WHERE created_at<?').bind(old).run();
  }
 };
