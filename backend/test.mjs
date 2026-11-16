@@ -102,6 +102,11 @@ test('without OpenAI\'s key the brush\'s model is Sonnet',async t=>{
  assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Sol',mode:'brush'})).status,200);
  assert.equal(env.CLAUDE.asked[0].model,'claude-sonnet-5-5');assert.match(env.CLAUDE.asked[0].system,/Paint with brush/);
 });
+test('DRAW_MODEL and DRAW_EFFORT take every call, for trying a model',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();env.DRAW_MODEL='Opus';env.DRAW_EFFORT='low';
+ assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Sol',mode:'brush'})).status,200);
+ assert.equal(env.CLAUDE.asked[0].model,'claude-opus-5-5');assert.deepEqual(env.CLAUDE.asked[0].output_config,{effort:'low'});
+});
 test('the agent\'s code searches only where search is set up',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
  assert.equal((await request('/api/draw/search',{page:call.page,endpoint:'web',params:{q:'whale'}})).status,403);

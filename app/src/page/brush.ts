@@ -1,6 +1,6 @@
 /**
  * The brush, beside Type: one button that turns brush mode on and off. With it on, the agent paints with a brush's
- * media and its turns go to Sol; with it off, the agent draws with the pen and its turns go to Sonnet. The button sets
+ * media and its turns go to Opus; with it off, the agent draws with the pen and its turns go to Sonnet. The button sets
  * the two choices of the menu this site hides, Mode and Brain, which model.ts reads and keeps in this browser, so the
  * page opens in the mode it was left in.
  */
@@ -11,7 +11,7 @@ const button = document.getElementById("brush")!,
 /** Turns brush mode on or off, and shows which on the button. */
 function paint(on: boolean): void {
   mode.value = on ? "brush" : "pen";
-  model.value = on ? "Sol" : "Sonnet";
+  model.value = on ? "Opus" : "Sonnet";
   for (const choice of [mode, model]) choice.dispatchEvent(new Event("change")); // model.ts keeps each choice
   button.classList.toggle("on", on);
   button.ariaPressed = String(on);

@@ -4,9 +4,9 @@
  * the key, the prompt and the tool, and passes the conversation to the model.
  *
  *   POST /api/draw/messages   {page, model, mode?, messages, token?}: the conversation so far of the drawing `page`,
- *                             and the name of the model the page chose, one of MODELS: Sonnet with the pen, and
- *                             Sol, OpenAI's, with the brush (openai.ts), or Sonnet in its place while the secret
- *                             OPENAI_API_KEY is not set. The gateway sends it to
+ *                             and the name of the model the page chose, one of MODELS: Opus with the brush, which
+ *                             is all this site shows, and Sonnet with the pen. Sol, OpenAI's, goes through
+ *                             openai.ts, or to Sonnet while the secret OPENAI_API_KEY is not set. The gateway sends it to
  *                             that model with the agent's prompt and tool, and streams the reply back as the SDK's
  *                             MessageStream lines.
  *   POST /api/draw/search     {page, endpoint, params, token?}: a search with the Brave Search API, for the agent's
@@ -32,7 +32,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { MessageParam, Usage } from "@anthropic-ai/sdk/resources/messages";
-import { EFFORT, MAX_TOKENS, MODE, MODELS, MODES, type Mode, TOOLS, prompt } from "./agent.ts";
+import { EFFORT, EFFORTS, MAX_TOKENS, MODE, MODELS, MODES, type Mode, TOOLS, prompt } from "./agent.ts";
 import { respond } from "./openai.ts";
 import { type WebEnv, download, search } from "./web.ts";
 
@@ -45,6 +45,8 @@ interface Statement {
 interface Env extends WebEnv {
   ANTHROPIC_API_KEY: string;
   OPENAI_API_KEY?: string;
+  DRAW_MODEL?: string;
+  DRAW_EFFORT?: string;
   DB: { prepare(query: string): Statement };
   DRAW_LIMIT: { limit(o: { key: string }): Promise<{ success: boolean }> };
   DRAW_PAGE_CENTS: string;
@@ -149,8 +151,12 @@ async function converse(
     asked = given.model;
   if (typeof asked !== "string" || !Object.hasOwn(MODELS, asked) || !Array.isArray(messages) || !messages.length)
     return say(422, `Send {page, model, messages}, with model one of ${Object.keys(MODELS).join(", ")}.`);
-  // without OpenAI's key, a call for one of OpenAI's models goes to Sonnet, so the page still draws
-  const chosen = MODELS[asked].id.startsWith("openai/") && !env.OPENAI_API_KEY ? "Sonnet" : asked;
+  // DRAW_MODEL, one of MODELS, takes every call whatever the page asked for, and DRAW_EFFORT sets how hard it thinks:
+  // for trying a model on this computer with `wrangler dev --var`. Otherwise, without OpenAI's key, a call for one of
+  // OpenAI's models goes to Sonnet, so the page still draws.
+  const forced = env.DRAW_MODEL && Object.hasOwn(MODELS, env.DRAW_MODEL) ? env.DRAW_MODEL : undefined,
+    chosen = forced ?? (MODELS[asked].id.startsWith("openai/") && !env.OPENAI_API_KEY ? "Sonnet" : asked),
+    effort = EFFORTS.includes(env.DRAW_EFFORT ?? "") ? env.DRAW_EFFORT! : EFFORT;
   const modes = Object.keys(MODES) as Mode[],
     mode = modes.find((m) => m === given.mode) ?? MODE;
   if (given.mode !== undefined && mode !== given.mode) return say(422, `The mode is one of ${modes.join(", ")}.`);
@@ -189,7 +195,7 @@ async function converse(
           system,
           tools: TOOLS,
           messages: messages as MessageParam[],
-          effort: EFFORT,
+          effort,
           max_tokens: MAX_TOKENS,
           page,
         },
@@ -201,7 +207,7 @@ async function converse(
     : (env.CLAUDE ?? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })).messages.stream({
         model,
         max_tokens: MAX_TOKENS,
-        output_config: { effort: EFFORT },
+        output_config: { effort: effort as "low" },
         system,
         tools: TOOLS,
         cache_control: { type: "ephemeral" },

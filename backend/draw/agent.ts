@@ -23,15 +23,18 @@ export const MODELS: Record<string, { id: string; prices: Prices; over?: { from:
     prices: [0.1, 0.125, 0.01, 0.5],
     over: { from: 100_001, prices: [0.5, 0.625, 0.05, 2.5] },
   },
-  // OpenAI's GPT-6.1 Sol, which the page chooses in brush mode: a model whose id names its maker is called at OpenAI
+  // Claude Opus 5.5, which the page chooses in brush mode
+  Opus: { id: "claude-opus-5-5", prices: [4, 5, 0.2, 20] },
+  // OpenAI's GPT-6.1 Sol, which the page chose in brush mode before Opus: a model whose id names its maker is called at OpenAI
   Sol: {
     id: "openai/gpt-6.1-sol",
     prices: [2, 2.5, 0.1, 10],
     over: { from: 272_000, prices: [4, 5, 0.2, 15] },
   },
 };
-/** How hard the model thinks, on every call. */
-export const EFFORT = "medium";
+/** How hard the model thinks, on every call, unless DRAW_EFFORT names another of EFFORTS. */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+export const EFFORT = "low";
 export const MAX_TOKENS = 64000;
 
 /**
