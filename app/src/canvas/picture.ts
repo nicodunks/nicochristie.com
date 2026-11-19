@@ -2,12 +2,20 @@
  * Pictures of the sheet. The agent is given one part of the page: the ink on the paper, under a grid labelled with
  * coordinates. The person's drawings are kept and exported as the whole of the ink on the paper, with no grid.
  */
-import type { Picture } from "../agent/loop.ts";
 import type { Box } from "../paint/api.ts";
-import { draw } from "../paint/draw.ts";
+import { decoded, draw } from "../paint/draw.ts";
 import { GRID, NARROW, css } from "../paint/constants.ts";
 import { type Shot, posed } from "../paint/pose.ts";
 import { OPEN, sheet } from "./state.ts";
+
+/** A picture of part of the page, as the agent is given it: a base64 JPEG and the x and y of its edges. */
+export interface Picture {
+  picture: string;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
 
 const WIDEST_PICTURE = 2576; // the most pixels across or down a picture Claude takes without shrinking it
 const BORDER = 24; // the paper around the ink in a picture of the whole drawing, in page units
@@ -15,9 +23,10 @@ const BORDER = 24; // the paper around the ink in a picture of the whole drawing
 /**
  * Returns a picture of the whole drawing: all the ink where the sheet has it, on the paper, with BORDER units of paper
  * around it. It has two pixels to a page unit, or fewer where that would make it more than `most` pixels across or
- * down. A blank sheet gives a picture of paper as wide as the window.
+ * down. A blank sheet gives a picture of paper as wide as the window. Resolves once the sheet's pictures are decoded.
  */
-export function whole(most: number): HTMLCanvasElement {
+export async function whole(most: number): Promise<HTMLCanvasElement> {
+  await decoded(sheet.marks);
   const box = sheet.marks.length ? sheet.around(sheet.marks) : { x: 0, y: 0, width: OPEN, height: OPEN / 2 };
   const [x0, y0, wide, high] = [box.x - BORDER, box.y - BORDER, box.width + 2 * BORDER, box.height + 2 * BORDER],
     k = Math.min(2, most / Math.max(wide, high)); // pixels per page unit
@@ -35,9 +44,10 @@ export function whole(most: number): HTMLCanvasElement {
  * Returns the picture the agent gets of one box of the sheet, the whole box, widened around its middle to NARROW
  * units across if it is narrower, and as much taller. One pixel is one page unit, or less where that would make the
  * picture larger than Claude takes, and a grid line every GRID units is labelled with its coordinate. Every mark is
- * whole and where the sheet has it, or where `shot` holds it if given.
+ * whole and where the sheet has it, or where `shot` holds it if given. Resolves once the sheet's pictures are decoded.
  */
-export function picture({ x, y, width, height }: Box, shot?: Shot): Picture {
+export async function picture({ x, y, width, height }: Box, shot?: Shot): Promise<Picture> {
+  await decoded(sheet.marks);
   const from = Math.max(0, Math.round(y)),
     span = Math.round(Math.max(NARROW, width)),
     x0 = Math.round(Math.max(0, x + (width - span) / 2));

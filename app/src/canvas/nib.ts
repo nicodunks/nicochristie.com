@@ -25,7 +25,10 @@ export function draw(m: Mark, k: number): void {
     (m.kind === "line" && m.crayon) ||
     (m.kind === "brush" && !["stroke", "hatch"].includes(m.paint.kind));
   const name = wash ? "crayon" : m.made === "write" || m.kind === "brush" ? "pencil" : "pen",
-    [x, y] = m.kind === "line" ? along(m.pieces, k) : middle((m.kind === "fill" ? m.rings : m.points).flat());
+    [x, y] =
+      m.kind === "line"
+        ? along(m.pieces, k)
+        : middle(m.kind === "fill" ? m.rings.flat() : m.kind === "image" ? m.at : m.points.flat());
   if (m !== held) {
     // a new mark: the hand lifts the tool and glides it there
     nib.classList.add("up");

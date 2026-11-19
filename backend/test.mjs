@@ -62,7 +62,7 @@ function fakeClaude(usage={input_tokens:1000,output_tokens:100}){
  const claude={asked:[],messages:{stream(args){claude.asked.push(args);return {abort(){},finalMessage:async()=>reply,withResponse:async()=>({}),toReadableStream:()=>new Response('{"type":"message_stop"}\n').body};}}};
  return claude;
 }
-const call={page:'2026-11-16T00-00-00-000Z-abcd',model:'Sonnet',messages:[{role:'user',content:[{type:'text',text:'draw a cat'}]}]};
+const call={page:'2026-11-16T00-00-00-000Z-abcd',model:'Opus',messages:[{role:'user',content:[{type:'text',text:'draw a cat'}]}]};
 const settled=()=>new Promise(r=>setTimeout(r,10));
 test('a drawing\'s first request needs the bot check, and its later ones do not',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env,sql}=fixture();env.CLAUDE=fakeClaude();
@@ -70,15 +70,14 @@ test('a drawing\'s first request needs the bot check, and its later ones do not'
  assert.equal((await request('/api/draw/messages',{...call,token:'ok'},{origin:'https://evil.example'})).status,403);
  const first=await request('/api/draw/messages',{...call,token:'ok'});assert.equal(first.status,200);assert.equal(await first.text(),'{"type":"message_stop"}\n');
  assert.equal((await request('/api/draw/messages',call)).status,200);
- const asked=env.CLAUDE.asked[0];assert.equal(asked.model,'claude-sonnet-5-5');assert.match(asked.system,/homepage of Nico Christie/);assert.match(asked.system,/declare function write|function write\(/);assert.equal(asked.tools[0].name,'run');assert.deepEqual(asked.messages,call.messages);
- await settled();assert.deepEqual(sql.prepare('SELECT micros FROM draw_calls').all().map(r=>r.micros),[3000,3000]);
+ const asked=env.CLAUDE.asked[0];assert.equal(asked.model,'claude-opus-5-5');assert.deepEqual(asked.output_config,{effort:'low'});assert.match(asked.system[0].text,/homepage of Nico Christie/);assert.match(asked.system[0].text,/function write\(/);assert.equal(asked.system[0].cache_control.ttl,'1h');assert.equal(asked.thinking.block_binding.prefix_mismatch_behavior,'drop_block');assert.equal(asked.tools[0].name,'run');assert.deepEqual(asked.messages,call.messages);
+ await settled();assert.deepEqual(sql.prepare('SELECT micros FROM draw_calls').all().map(r=>r.micros),[6000,6000]);
 });
 test('a call is refused when malformed or for a model the page does not have',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
  assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Luna'})).status,422);
  assert.equal((await request('/api/draw/messages',{...call,messages:[]})).status,422);
- assert.equal((await request('/api/draw/messages',{...call,mode:'oils'})).status,422);
- assert.equal((await request('/api/draw/messages',{...call,page:'../x'})).status,422);
+  assert.equal((await request('/api/draw/messages',{...call,page:'../x'})).status,422);
  assert.equal((await request('/api/draw/record',call)).status,404);assert.equal(env.CLAUDE.asked.length,0);
 });
 test('a drawing, a connection and a day each spend only up to their cap',async t=>{
@@ -97,15 +96,10 @@ test('the database caps the drawings one connection starts in a day',async t=>{
  for(let i=0;i<30;i++)assert.equal((await request('/api/draw/messages',{...call,page:'drawing-'+i,token:'ok'})).status,200);
  const over=await request('/api/draw/messages',{...call,page:'drawing-30',token:'ok'});assert.equal(over.status,402);assert.match(await over.text(),/come back tomorrow/);
 });
-test('without OpenAI\'s key the brush\'s model is Sonnet',async t=>{
- mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();
- assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Sol',mode:'brush'})).status,200);
- assert.equal(env.CLAUDE.asked[0].model,'claude-sonnet-5-5');assert.match(env.CLAUDE.asked[0].system,/Paint with brush/);
-});
-test('DRAW_MODEL and DRAW_EFFORT take every call, for trying a model',async t=>{
- mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();env.DRAW_MODEL='Opus';env.DRAW_EFFORT='low';
- assert.equal((await request('/api/draw/messages',{...call,token:'ok',model:'Sol',mode:'brush'})).status,200);
- assert.equal(env.CLAUDE.asked[0].model,'claude-opus-5-5');assert.deepEqual(env.CLAUDE.asked[0].output_config,{effort:'low'});
+test('DRAW_EFFORT sets how hard the model thinks, for trying an effort',async t=>{
+ mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();env.DRAW_EFFORT='medium';
+ assert.equal((await request('/api/draw/messages',{...call,token:'ok'})).status,200);
+ assert.deepEqual(env.CLAUDE.asked[0].output_config,{effort:'medium'});
 });
 test('the agent\'s code searches only where search is set up',async t=>{
  mockTurnstile(t,{action:'sheet'});const {request,env}=fixture();env.CLAUDE=fakeClaude();

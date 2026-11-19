@@ -1,8 +1,9 @@
 /**
  * The person's hands on the sheet. With the pen or the eraser, a pen or a mouse draws. A finger draws too until a pen
- * has been seen; after that one finger scrolls. With the hand, any pointer drags the sheet. Two fingers always scroll,
+ * has been seen; after that one finger scrolls. With the hand, any pointer drags the sheet. With Select, a press picks
+ * and drags, which select.ts carries out. Two fingers always scroll,
  * and zoom as they move apart or together. The wheel, and a pinch on a trackpad, zoom about the pointer. The zoom at
- * the bottom left shows the zoom in percent, and tapping it opens a slider that zooms; Ctrl or Cmd with + or - zooms
+ * the top right is a magnifier, and tapping it opens a slider that zooms; Ctrl or Cmd with + or - zooms
  * in or out, and Ctrl or Cmd with 0 goes back to the zoom the page opened at. Dragging the thumb of the bar on the
  * right edge scrolls down from the top of the sheet, and the thumb of the bar on the bottom edge scrolls across from
  * the left of the sheet. Each bar reaches the farthest ink, or one view past where the person is if that is farther.
@@ -19,8 +20,9 @@ import type { LinePoint } from "../paint/sheet.ts";
 import { did } from "./history.ts";
 import { chosen } from "./pen.ts";
 import { session, sheet } from "./state.ts";
+import { abandon, press } from "./select.ts";
 import { ready } from "./tools.ts";
-import { tally } from "./track.ts";
+import { hooks } from "./hooks.ts";
 import {
   OPENING,
   bars,
@@ -156,6 +158,7 @@ canvas.addEventListener("pointerdown", (e) => {
     if (making?.kind === "pen") return; // a hand laid on the sheet while the pen writes does nothing
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (hand || pen || fingers.size > 1) {
+      abandon(); // a second finger scrolls, so Select gives up what the first began
       making = null;
       scrolling = true;
       canvas.classList.add("held");
@@ -165,6 +168,7 @@ canvas.addEventListener("pointerdown", (e) => {
     }
   }
   const drawing = e.pointerType !== "mouse" || e.button === 0; // a mouse draws with its main button only
+  if (chosen.tool === "select") return void (drawing && !scrolling && press(e));
   if (!making && !scrolling && !session.busy && drawing) {
     const { clientX: x, clientY: y } = e,
       erasing = chosen.tool === "eraser",
@@ -215,7 +219,7 @@ function lift(e: PointerEvent): void {
     { color, opacity } = chosen;
   making = null;
   show();
-  tally(erasing ? "erases" : "strokes");
+  hooks.tally(erasing ? "erases" : "strokes");
   if (erasing) did(`erased within ${boxed(points, width / 2)}`, () => sheet.rub({ line: points }));
   else {
     const id = sheet.next++;
@@ -247,7 +251,7 @@ canvas.addEventListener(
 // Only the sheet zooms, never the browser's page with its buttons.
 window.addEventListener("wheel", (e) => e.ctrlKey && e.preventDefault(), { passive: false });
 window.addEventListener("gesturestart", (e) => e.preventDefault());
-// Tapping the percent at the bottom left grows its card up to show the zoom slider, or shrinks it back; touching
+// Tapping the magnifier at the top right grows its card down to show the zoom slider, or shrinks it back; touching
 // anywhere else closes it too. The slider zooms about the middle of the window, as Ctrl and + or - do.
 const slider = document.getElementById("slider")!,
   zoomer = document.getElementById("zoomer") as HTMLInputElement;

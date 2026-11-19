@@ -1,15 +1,17 @@
 /**
  * The links in the words about Nico (about.ts). The words are ink, which cannot be a link, so the page follows a tap
  * on a link's ink itself: a press on it that lifts where it started opens what LINKS has for the ink's part, and draws
- * nothing. A mouse over a link's ink shows the hand that links show. Ink the agent has erased is no link any more, and
+ * nothing, while the person holds the pen or the hand; with Select or the eraser the words are ink like any other. A
+ * mouse over a link's ink shows the hand that links show. Ink the agent has erased is no link any more, and
  * ink it has moved is a link where it is now.
  *
  * This module is loaded before input.ts, so its listeners on the sheet run first and keep such a press from input.ts.
  */
 import { boxOf } from "../paint/sheet.ts";
 import { LINKS } from "./about.ts";
-import { sheet } from "./state.ts";
-import { canvas, pageAt } from "./view.ts";
+import { chosen } from "../canvas/pen.ts";
+import { sheet } from "../canvas/state.ts";
+import { canvas, pageAt } from "../canvas/view.ts";
 
 const REACH = 4; // how far outside a link's ink a tap still counts, in page units
 const STILL = 8; // how far a press may move and still be a tap, in window pixels
@@ -17,6 +19,7 @@ let pressed: { pointer: number; x: number; y: number; href: string } | null = nu
 
 /** Returns where the link's ink under the window's point (px, py) leads, if there is such ink. */
 function linkAt(px: number, py: number): string | undefined {
+  if (chosen.tool !== "pen" && chosen.tool !== "hand") return undefined; // Select and the eraser work on the words as ink
   const [x, y] = pageAt(px, py);
   for (const m of sheet.marks) {
     if (m.by !== "agent" || !m.part || !Object.hasOwn(LINKS, m.part)) continue;

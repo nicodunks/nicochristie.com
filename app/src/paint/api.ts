@@ -13,9 +13,9 @@
  * - A turn starts with stroke in the page's black and strokeWeight 3, as the pen draws, and fill white, as p5's.
  * - The page's colours by name, such as fill("sky"), are the page's own colours; any other colour works as in p5.
  * - background() colours the paper, behind all ink, the person's too. It covers nothing.
- * - p5's functions for pixels, images, text, the DOM, loading files, the mouse and the keyboard are not here. Write
- *   text with write(), and read a picture with download() and pixels(). erase(), copy() and print() are the page's
- *   own, below.
+ * - p5's functions for pixels, text, the DOM, loading files, the mouse and the keyboard are not here. Write text
+ *   with write(), lay a picture from the folder on the page with image(), and inspect one with pixels(). image(),
+ *   erase(), copy() and print() are the page's own, below.
  *
  * Numbers. Every position and size must be finite and within 100000 of 0. p5's angles are radians, unless you call
  * angleMode(DEGREES); a pose's rotate is in degrees, as CSS has it. Times are seconds. opacity runs from 0, unseen,
@@ -23,7 +23,7 @@
  *
  * Blocks. Code you give runs while you write it, cut into blocks at each line that ends with render();. Blocks are
  * counted from 1 in each call. A block's top-level names carry over to later blocks and calls of this turn, and may be
- * declared again. A block may use await at its top level, which braveSearch, download and pixels need. There are no
+ * declared again. A block may use await at its top level, which asynchronous functions such as pixels need. There are no
  * timers. A function given something malformed throws an Error that says what is wrong; the rest of the call does not
  * run, and what the block drew before the error stays.
  */
@@ -55,6 +55,20 @@ export declare function hand(amount: number): void;
  * Example: stroke("red"); write({x: 100, y: 50, width: 300, height: 33, text: "y = \\frac{1}{2}x^2"});
  */
 export declare function write(o: Box & { text: string }): number;
+/**
+ * Lays the picture at path in your folder on the page as one ink in the part of the moment, with its top left at
+ * (x, y), `width` wide and `height` tall, or as tall as the picture's shape makes it if height is left out. It is
+ * shrunk to at most 1568 pixels on its longest side. It moves, copies, stacks, animates and is erased as other ink is.
+ * colorAt() does not see it. Example: await image({path: "/pictures/fox.png", x: 100, y: 100, width: 400});
+ */
+export declare function image(o: {
+  path: string;
+  x: number;
+  y: number;
+  width: number;
+  height?: number;
+  opacity?: number;
+}): Promise<number>;
 
 // ### The page
 // Read what is on the page, and change ink already drawn.
@@ -78,8 +92,9 @@ export declare function ink(within?: Box): Ink[];
 export declare function colorAt(x: number, y: number): Color;
 /**
  * Asks for a picture, which comes with your call's result: of the page after your code from y down, or of the
- * person's view if y is left out, with every animation at time t; or of the picture at path in your folder.
- * Example: look(); or look({y: 400}); or look({t: 2}); or look({path: "/photos/1.jpg"});
+ * person's view if y is left out, with the animations as they show t seconds after they all start; or of the picture
+ * at path in your folder.
+ * Example: look(); or look({y: 400}); or look({t: 2}); or look({path: "/pictures/fox.png"});
  */
 export declare function look(o?: { y?: number; t?: number } | { path: string }): void;
 /**
@@ -127,20 +142,32 @@ export declare function render(): void;
 // An animation moves parts for as long as it runs, and never changes ink: ink() and look() show it where it was drawn.
 
 /**
- * Makes animation `name`, and a sticker, `sticker` or ✨, that the person taps to stop it and to play it again from
- * its start. It runs until stopped, or for `seconds` if given, after which its parts go back. A name already used
- * replaces that animation, and two animations that pose one part both apply, the older first.
+ * Makes animation `name`, with a sticker, `sticker` or ✨, by the parts it moves. The page's animations share one clock,
+ * which starts when the drawing opens and again whenever you make an animation. Each animation starts `at` seconds
+ * in, or at 0 if `at` is left out.
+ * - With `seconds`, it runs that long and then holds its last pose, so end it where its parts should stay. When the
+ *   last of these animations is over, they all start again.
+ * - Without `seconds`, it runs on and never starts again, as a background does.
+ * A sequence is at: 0, seconds: 2, then at: 2, seconds: 3, and things that happen together share an `at`. To change a
+ * sequence, change these numbers with retime(). When two animations pose the same part, the later one moves it on
+ * from where the earlier one left it. A name already used replaces that animation. The person taps a sticker to stop
+ * or start its animation. To see a moment, call look({t}).
  *
  * frame(t, data) draws the animation at t, about 60 times a second: pose() holds parts in poses, and p5's drawing
  * functions and write() add ink for this one picture, such as rain or a counting number, which moves with its part
  * if part() gave it one. Each picture starts with p5's settings as a turn starts them, and with no part. frame runs
- * apart from your code: write it as an arrow function that uses only t, data, p5's functions, part, hand, write, pose
- * and play, JavaScript's own such as Math, and what it declares itself. Pass what it needs in data, and make random
+ * apart from your code: write it as an arrow function that uses only t, data, p5's functions, part, hand, write and
+ * pose, JavaScript's own such as Math, and what it declares itself. Pass what it needs in data, and make random
  * numbers in your code, since one t must always give one picture. For motion that repeats, use Math.sin(t); for
  * motion that ends and stays, k = Math.min(1, t / 3).
  *
  * If frame fails or poses a part with no ink, your call's result says so and the animation is not made. If it fails
  * later, it stops, and you are told next turn.
+ * Example, the bird flies to the tree in the first 3 seconds and stays there, and then the cat looks up:
+ *   animate({name: "the bird flies to the tree", sticker: "🐦", at: 0, seconds: 3,
+ *     frame: (t) => pose("bird", {dx: 300 * t / 3})});
+ *   animate({name: "the cat looks up", sticker: "🐱", at: 3, seconds: 1,
+ *     frame: (t) => pose("cat.head", {rotate: -20 * t})});
  * Example, a tree that sways, with twelve leaves that flutter out of step:
  *   animate({name: "the tree sways", sticker: "🌳", data: {leaves: 12}, frame: (t, data) => {
  *     pose("tree", {rotate: 3 * Math.sin(1.5 * t), origin: "bottom"});
@@ -151,9 +178,15 @@ export declare function animate<Data>(o: {
   name: string;
   frame: (t: number, data: Data) => void;
   data?: Data;
+  at?: number;
   seconds?: number;
   sticker?: string;
 }): void;
+/**
+ * Changes when an animation starts, how long it runs, or both, without making it again.
+ * Example: retime({name: "the cat looks up", at: 0}); retime({name: "the bird flies to the tree", at: 1});
+ */
+export declare function retime(o: { name: string; at?: number; seconds?: number }): void;
 /** Takes the animation and its sticker off the page. Example: removeAnimation("the tree sways"); */
 export declare function removeAnimation(name: string): void;
 /**
@@ -161,18 +194,12 @@ export declare function removeAnimation(name: string): void;
  * applies first. Example: pose("bird", {dy: 10 * Math.sin(3 * t), rotate: 5});
  */
 export declare function pose(part: string, how: Pose): void;
-/**
- * Only in a frame function: shows animation `name` at its time t, so one animation can play others as a scene:
- * play("the bird flies", t - 3). It shows nothing before t = 0 or after its seconds. While it is played, it does not
- * also run by itself.
- */
-export declare function play(name: string, t: number): void;
 
 // ### Your folder
-// Your folder holds files by path, such as "/photos/1.jpg" or "/code/1.js": the person's photos, your code, and what
-// your code wrote or downloaded. A path starts with "/". Only you see the folder, and it lasts while the page is open.
+// Your folder holds files by path, such as "/code/1.js" or "/pictures/fox.png": your code, what your code wrote or
+// downloaded, and any files copied in for you. A path starts with "/". Only you see the folder, and it lasts while the page is open.
 
-/** The files under dir, or all of them. Example: for (const f of ls("/photos")) print(f.path, f.size); */
+/** The files under dir, or all of them. Example: for (const f of ls("/pictures")) print(f.path, f.size); */
 export declare function ls(dir?: string): FileInfo[];
 /** The file's text. Example: const notes = readFile("/notes.txt"); */
 export declare function readFile(path: string): string;
@@ -186,7 +213,7 @@ export declare function edit(path: string, old: string, replacement: string): Fi
 /**
  * A picture's pixels, shrunk to at most 1568 on its longest side: red, green, blue and alpha from 0 to 255, row by
  * row from the top left, so pixel (i, j) starts at data[4 * (j * width + i)].
- * Example: const p = await pixels("/photos/1.jpg"); print(p.width, p.height, p.data[0]);
+ * Example: const p = await pixels("/pictures/fox.png"); print(p.width, p.height, p.data[0]);
  */
 export declare function pixels(path: string): Promise<{ width: number; height: number; data: Uint8ClampedArray }>;
 

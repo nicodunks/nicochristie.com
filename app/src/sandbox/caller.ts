@@ -7,6 +7,12 @@
  * does it with `serve` and answers with {got: id, value} or {got: id, error}. The time the page takes over a need
  * does not count against the limit.
  */
+/**
+ * The URL to start each worker's script from, by the script's name, for a page that cannot load the script from its
+ * own server and so starts it from a blob. A script not in it is loaded by its name, from the page's folder.
+ */
+export const scripts: Record<string, string> = {};
+
 export class Caller<Ask, Reply> {
   private worker?: Worker;
   private queue: Promise<unknown> = Promise.resolve();
@@ -30,7 +36,7 @@ export class Caller<Ask, Reply> {
     const reply = this.queue.then(
       () =>
         new Promise<Reply | undefined>((done) => {
-          const worker = (this.worker ??= new Worker(this.script));
+          const worker = (this.worker ??= new Worker(scripts[this.script] ?? this.script));
           let timer = setTimeout(() => this.stop(), this.limit);
           const settle = (r?: Reply) => {
             clearTimeout(timer);

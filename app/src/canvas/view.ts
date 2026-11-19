@@ -6,7 +6,7 @@
  */
 import type { Box, Point } from "../paint/api.ts";
 import { overlaps } from "../paint/box.ts";
-import { draw, line } from "../paint/draw.ts";
+import { draw, line, whenDecoded } from "../paint/draw.ts";
 import { CLOSEST, START, WIDEST, css } from "../paint/constants.ts";
 import type { LinePoint } from "../paint/sheet.ts";
 import { looks, present } from "./present.ts";
@@ -25,9 +25,8 @@ export const bars: Record<Axis, HTMLElement> = {
   x: document.getElementById("barx")!,
   y: document.getElementById("bar")!,
 };
-const stickers = document.getElementById("stickers")!;
-// The zoom at the bottom left: the zoom in percent of the zoom every drawing opens at, and the slider that tapping it
-// opens, whose value is 0 at its bottom end, zoomed out fully, and 1 at its top end, zoomed in fully, with each step
+// The zoom at the top left: the zoom in percent of the zoom every drawing opens at, and
+// the slider that tapping it opens, whose value is 0 at its bottom end, zoomed out fully, and 1 at its top end, zoomed in fully, with each step
 // along it zooming by the same factor.
 const zoomed = document.getElementById("zoomed")!,
   zoomer = document.getElementById("zoomer") as HTMLInputElement;
@@ -59,6 +58,7 @@ interface Stroke {
 }
 
 let stroke: Stroke | null = null; // the stroke the person is making now
+const after: (() => void)[] = []; // what runs after each redraw of the sheet
 const asked = new Set<() => void>(); // what waits to be drawn at the next frame
 
 // Runs `job` at the next frame, once however often it is asked for before then.
@@ -75,6 +75,12 @@ function soon(job: () => void): void {
 export function redraw(): void {
   soon(paint);
 }
+whenDecoded(redraw); // a picture on the sheet shows once it is decoded
+
+/** Has `fn` called after each redraw of the sheet, to put what lies over the sheet where the sheet now shows. */
+export function painted(fn: () => void): void {
+  after.push(fn);
+}
 
 /** Resolves when the browser is about to paint the next frame, or after a tenth of a second in a hidden window. */
 export function nextFrame(): Promise<void> {
@@ -85,7 +91,7 @@ export function nextFrame(): Promise<void> {
 }
 
 // Draws the part of the sheet the person sees, with each mark as it looks now and the animations' ink above the
-// marks. Puts the stickers and the thumbs of the two bars where that part is on the sheet.
+// marks. Puts the thumbs of the two bars where that part is on the sheet.
 function paint(): void {
   const k = view.scale * devicePixelRatio,
     seen = inView(),
@@ -99,9 +105,6 @@ function paint(): void {
     if (how.at || overlaps(sheet.box(m), seen, MARGIN)) draw(ctx, m, how); // a moved mark may be far from its box
   }
   for (const m of present.shot?.ink ?? []) draw(ctx, m, look(m));
-  // the stickers lie on the sheet: page units become window pixels
-  stickers.style.transform = `translate(${-view.left * view.scale}px, ${-view.above * view.scale}px) scale(${view.scale})`;
-  stickers.style.setProperty("--k", String(view.scale));
   drawStroke();
   for (const axis of ["x", "y"] as const) {
     const bar = bars[axis],
@@ -113,6 +116,7 @@ function paint(): void {
     thumb.style[axis === "x" ? "width" : "height"] = `${size}px`;
     thumb.style[axis === "x" ? "left" : "top"] = `${((length - size) * at) / far}px`;
   }
+  for (const fn of after) fn();
 }
 
 /**
@@ -175,8 +179,8 @@ export function zoomOf(at: number): number {
 }
 
 /**
- * Sets the zoom, within its limits: 1 shows WIDEST units across, and the most shows CLOSEST. Shows it in percent and
- * on the slider.
+ * Sets the zoom, within its limits: 1 shows WIDEST units across, and the most shows CLOSEST. Shows it in percent in
+ * the magnifier's title and on the slider.
  */
 export function zoomTo(zoom: number): void {
   view.zoom = Math.min(MOST, Math.max(1, zoom));
@@ -184,15 +188,90 @@ export function zoomTo(zoom: number): void {
   zoomed.textContent = `${Math.round((100 * view.zoom) / OPENING)}%`;
   view.scale = (innerWidth / WIDEST) * view.zoom;
   view.wide = innerWidth / view.scale;
-  view.tall = innerHeight / view.scale;
+  view.tall = shown() / view.scale;
 }
 
-/** Fits the canvases to the window, when the page opens and when the window changes. */
+/** Returns how tall the page is now, in pixels: the window less what a phone's keyboard covers. */
+const shown = (): number => document.body.clientHeight || innerHeight;
+
+/** Fits the canvases to the page, when it opens and when the window or a phone's keyboard changes it. */
 export function fit(): void {
   for (const c of [canvas, top])
-    [c.width, c.height] = [innerWidth, innerHeight].map((n) => Math.round(n * devicePixelRatio));
+    [c.width, c.height] = [innerWidth, shown()].map((n) => Math.round(n * devicePixelRatio));
   zoomTo(view.zoom);
   scroll(0, 0);
+}
+
+/** Where the person is on the sheet: the zoom, and the left and top edges of what they see. */
+interface Place {
+  zoom: number;
+  left: number;
+  above: number;
+}
+const PAD = 16; // how far the ink the person saw stays from the edges of the band it is kept in, in pixels
+const GLIDE = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 200; // how long the view glides, in ms
+let typing: Place | null = null; // where the person was before a phone's keyboard moved the view, while it is open
+let gliding = 0; // counts the glides, so that a newer one stops an older one
+
+/**
+ * Fits the canvases to the page after a phone's keyboard has changed its height, and keeps the ink the person saw in
+ * sight. `was` and `now` are the bands of the page that no buttons cover, before and after, as their top and bottom in
+ * pixels. The ink kept in sight is every mark that showed in the band before, whole, so that none is cut off; a mark
+ * bigger than the page, such as a painted sky, counts only where it showed. When the keyboard opens and some of that
+ * ink would be outside the band now, the view glides to put it in the middle of the band, zooming out only as far as it
+ * must; otherwise nothing moves. When the keyboard closes, the view glides back to where it was.
+ */
+export function keyboard(open: boolean, was: [number, number], now: [number, number]): void {
+  const saw = {
+    x: view.left,
+    y: view.above + was[0] / view.scale,
+    width: view.wide,
+    height: (was[1] - was[0]) / view.scale,
+  };
+  const spans = sheet.marks
+    .map((m) => sheet.box(m))
+    .filter((b) => overlaps(b, saw))
+    .map((b) =>
+      b.width > view.wide || b.height > view.tall
+        ? [Math.max(b.y, saw.y), Math.min(b.y + b.height, saw.y + saw.height)]
+        : [b.y, b.y + b.height],
+    );
+  fit();
+  if (!open) {
+    if (typing) glide(typing);
+    typing = null;
+    return;
+  }
+  if (typing || !spans.length) return;
+  const ink = { top: Math.min(...spans.map(([t]) => t)), bottom: Math.max(...spans.map(([, b]) => b)) },
+    [top, bottom] = [now[0] + PAD, now[1] - PAD];
+  if ((ink.top - view.above) * view.scale >= top && (ink.bottom - view.above) * view.scale <= bottom) return;
+  typing = { zoom: view.zoom, left: view.left, above: view.above };
+  const zoom = view.zoom * Math.min(1, (bottom - top) / ((ink.bottom - ink.top) * view.scale)),
+    scale = (view.scale * zoom) / view.zoom;
+  glide({
+    zoom,
+    left: saw.x + saw.width / 2 - innerWidth / 2 / scale,
+    above: (ink.top + ink.bottom) / 2 - (top + bottom) / 2 / scale,
+  });
+}
+
+/** Moves the view to a place over GLIDE ms, easing out, with its zoom changing by the same factor each moment. */
+function glide(to: Place): void {
+  const from = { ...view },
+    start = performance.now(),
+    run = ++gliding;
+  const step = (time: number): void => {
+    if (run !== gliding) return;
+    const t = Math.min(1, (time - start) / GLIDE),
+      e = t * (2 - t);
+    zoomTo(from.zoom * (to.zoom / from.zoom) ** e);
+    view.left = from.left + (to.left - from.left) * e;
+    view.above = from.above + (to.above - from.above) * e;
+    scroll(0, 0);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
  * The sheet: what is on the page now. It holds the marks, which are the ink, in the order they were made, the
- * animations, and the colour of the paper behind all the ink. A mark is a line, a fill or a brush mark and holds its ink
+ * animations, and the colour of the paper behind all the ink. A mark is a line, a fill, a brush mark or a picture and holds its ink
  * as it is now: erasing cuts ink out of a mark, and moving maps a mark's points, so nothing remembers how a mark came
  * to be as it is. The sheet knows nothing of screens or
  * canvases, so the page and the workers that run the agent's code each use one.
@@ -107,23 +107,36 @@ export interface Made {
   pressure: number[];
   rotate: "none" | "natural" | "random";
 }
-export type Mark = LineMark | FillMark | BrushMark;
+/**
+ * A picture laid on the page. `src` is the picture as a data URL. `at` is where the picture's top left, top right and
+ * bottom left corners lie, in page units, so moving the picture maps those three points and it may turn and skew as
+ * other ink does. Rubbed-out parts are cuts, as a fill's are. Its colour is unused.
+ */
+export interface ImageMark extends Common {
+  kind: "image";
+  src: string;
+  at: [Point, Point, Point];
+  cuts: Cut[];
+}
+export type Mark = LineMark | FillMark | BrushMark | ImageMark;
 
 /** A part of a fill that is rubbed out: inside a ring, or under the line of the person's eraser. */
 export type Cut = { ring: Point[] } | { line: LinePoint[] };
 
 /**
  * An animation as the agent's code made it. `frame` is the source text of its function (t, data) => void, `data` is
- * the value that function is given, `seconds` is how long it runs, or undefined to run until it is stopped, and
- * `sticker` is the emoji of its sticker. `at` is where the sticker lies on the page, once the page has placed it.
+ * the value that function is given, `at` is when it starts, in seconds on the clock the page's animations share, or
+ * undefined for 0, `seconds` is how long it runs before it holds its last pose, or undefined to run on, `sticker` is
+ * the emoji of its sticker, and `place` is where the sticker sits on the page, once the page has put it there.
  */
 export interface Animation {
   name: string;
   frame: string;
   data: unknown;
+  at?: number;
   seconds?: number;
   sticker: string;
-  at?: Point;
+  place?: Point;
 }
 
 /** What is on a sheet at one moment, and its next id. */
@@ -185,7 +198,7 @@ export class Sheet {
       if (m.opacity < 1) entry.opacity = m.opacity;
       if (m.kind === "fill" || (m.kind === "brush" && m.paint.kind !== "stroke")) entry.fill = m.color;
       else if (m.kind === "brush") entry.color = m.color;
-      else {
+      else if (m.kind === "line") {
         entry.color = m.color;
         if (m.text !== undefined) entry.text = m.text;
         if (m.made === "pen")
@@ -233,6 +246,8 @@ export class Sheet {
       if (m.kind === "line") m.pieces = m.pieces.map((p) => movedLine(p, to, thick));
       else if (m.kind === "fill")
         [m.rings, m.cuts] = [m.rings.map((r) => r.map(to)), m.cuts.map((c) => moved(c, to, thick))];
+      else if (m.kind === "image")
+        [m.at, m.cuts] = [m.at.map(to) as ImageMark["at"], m.cuts.map((c) => moved(c, to, thick))];
       else
         [m.points, m.paint, m.reach, m.cuts] = [
           m.points.map((p) => p.map(to)),
@@ -261,7 +276,13 @@ export class Sheet {
 export function boxOf(m: Mark): Box {
   if (m.kind === "line") return around(m.pieces.flat(), widest(m.pieces.flat()) / 2);
   if (m.kind === "fill") return around(m.rings.flat());
+  if (m.kind === "image") return around(pictureCorners(m.at));
   return around(m.points.flat(), m.reach);
+}
+
+/** Returns all four corners of a picture laid with its top left, top right and bottom left corners at `at`. */
+export function pictureCorners([a, b, c]: ImageMark["at"]): Point[] {
+  return [a, b, [b[0] + c[0] - a[0], b[1] + c[1] - a[1]], c];
 }
 
 /** Returns the greatest width along a line. */
@@ -351,24 +372,37 @@ function rounded([x, y]: XY): Point {
 
 /**
  * Returns the pieces of a line with what `region` covers cut away. A point counts as covered when it lies in the
- * region, or, where `edge` is true, when the line's ink at the point reaches the region.
+ * region, or, where `edge` is true, when the line's ink at the point reaches the region. The line is checked every 2
+ * units along each segment, so a cut ends where the region does, but what is kept is the line's own points and the
+ * two ends of each cut, so erasing never adds points where nothing was cut.
  */
 function trimmed(pieces: LinePoint[][], region: Region, edge: boolean): LinePoint[][] {
-  const kept: LinePoint[][] = [];
+  const kept: LinePoint[][] = [],
+    covered = (q: LinePoint) => region.has(q, edge ? q[2] / 2 : 0);
   for (const p of pieces) {
-    let piece: LinePoint[] = [];
-    const keep = (q: LinePoint) => {
-      if (!region.has(q, edge ? q[2] / 2 : 0)) return void piece.push(q);
-      if (piece.length > 1) kept.push(piece);
-      piece = [];
-    };
-    keep(p[0]);
+    let piece: LinePoint[] = [],
+      inside = covered(p[0]);
+    if (!inside) piece.push(p[0]);
     for (let i = 1; i < p.length; i++) {
-      // every 2 units along each segment, so a cut ends where the region does, with the width between the two ends
       const [ax, ay, aw] = p[i - 1],
         [bx, by, bw] = p[i],
         n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
-      for (let k = 1; k <= n; k++) keep([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n, aw + ((bw - aw) * k) / n]);
+      let last = p[i - 1]; // the last point checked
+      for (let k = 1; k <= n; k++) {
+        const q: LinePoint =
+          k === n ? p[i] : [ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n, aw + ((bw - aw) * k) / n];
+        if (covered(q) !== inside) {
+          inside = !inside;
+          if (inside) {
+            // the cut begins: the piece ends at the last point outside it
+            if (piece[piece.length - 1] !== last) piece.push(last);
+            if (piece.length > 1) kept.push(piece);
+            piece = [];
+          } else piece.push(q); // the cut ends: a new piece begins here
+        }
+        last = q;
+      }
+      if (!inside && piece[piece.length - 1] !== p[i]) piece.push(p[i]);
     }
     if (piece.length > 1 || (piece.length && p.length === 1)) kept.push(piece);
   }

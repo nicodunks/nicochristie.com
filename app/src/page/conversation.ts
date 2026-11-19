@@ -1,14 +1,11 @@
 /**
- * The conversation with the agent, kept and run in the page. For each turn of the person, the page sends the whole
- * conversation to the gateway, which passes it to the model and streams the model's reply back. While the model writes a call
- * of its run tool, each block of the call's code runs on a copy of the sheet as soon as it is written, and the page
- * draws the block's ink. When the reply ends with tool calls, the page answers them with what the code printed and the
- * pictures it asked for, and asks again, until the model's turn is over.
+ * The website's conversation with the model, through the gateway. It streams each reply, hands each call of run to
+ * the model's environment on the canvas, and sends back the answers until the model's turn is over.
  */
 import { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { ContentBlockParam, MessageParam, ToolResultBlockParam } from "@anthropic-ai/sdk/resources/messages";
-import type { Peek } from "../paint/ops.ts";
-import type { Ran, Run, RunInput } from "../run/run.ts";
+import type { Answer } from "../canvas/environment.ts";
+import type { Ran, RunInput } from "../run/run.ts";
 
 const TRIM_AT = 100_000; // once the conversation is this many tokens long, it keeps only its last KEEP turns
 const KEEP = 5;
@@ -22,26 +19,23 @@ const DOING: Record<string, string> = {
 /** The gateway refused the turn for a reason the person can fix; the message says what to do. */
 export class Refused extends Error {}
 
-/** A picture of part of the page, as the agent is given it: a base64 JPEG and the x and y of its edges. */
-export interface Picture {
-  picture: string;
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
 /** What a turn needs from the page. */
 interface Hooks {
   signal: AbortSignal; // aborts when the person presses Stop
   doing: (text: string) => void; // shows what the agent is busy with
-  run: () => Run; // starts the worker that runs the turn's code, on a copy of the sheet as it is now
-  look: (peek: Peek) => Promise<Picture>; // the picture of the page that the agent's code asked for
+  environment: Environment; // runs the model's calls of run
   model: string; // the name of the model the person chose, such as "Sol"
   effort?: string; // the effort an admin chose, such as "high"; left out, the gateway's default
-  mode?: string; // the mode an admin chose, "pen" or "brush"; left out, the gateway's default
   post: (path: string, body: unknown, signal: AbortSignal) => Promise<Response>; // a request to the gateway, as the person
   ran?: (r: Ran) => void; // told what each call of run gave back, once its code has run
+}
+
+/** The model's environment on the canvas, which runs its calls of run. */
+interface Environment {
+  wrote: (id: string, input: RunInput) => void;
+  finish: (id: string, input: RunInput) => Promise<Ran>;
+  answer: (r: Ran) => Promise<Answer>;
+  stop: () => void;
 }
 
 export class Agent {
@@ -67,10 +61,10 @@ export class Agent {
     this.model = hooks.model;
     this.answerLeft();
     this.history.push({ role: "user", content: said });
-    let run: Run | undefined, stream: MessageStream | undefined;
+    let stream: MessageStream | undefined;
     const stop = () => {
       stream?.abort();
-      run?.stop();
+      hooks.environment.stop();
     };
     hooks.signal.addEventListener("abort", stop);
     try {
@@ -78,7 +72,7 @@ export class Agent {
         hooks.doing(DOING.thinking);
         const r = await hooks.post(
           "api/messages",
-          { page: this.page, model: hooks.model, effort: hooks.effort, mode: hooks.mode, messages: this.history },
+          { page: this.page, model: hooks.model, effort: hooks.effort, messages: this.history },
           hooks.signal,
         );
         if (r.status === 422) throw new Error("this page is out of date, so reload it");
@@ -98,12 +92,12 @@ export class Agent {
           const b = "index" in e ? snapshot.content[e.index] : undefined;
           if (b?.type !== "tool_use") return;
           if (b.name !== "run") return;
-          run ??= hooks.run();
           // the SDK shows a text of the input only once it is whole, so the code so far is read from the raw JSON
           if (e.type === "content_block_delta" && e.delta.type === "input_json_delta") {
             json.set(e.index, json.get(e.index) + e.delta.partial_json);
-            run.wrote(b.id, { code: codeSoFar(json.get(e.index)!) });
-          } else if (e.type === "content_block_stop") runs.set(b.id, run.finish(b.id, b.input as RunInput));
+            hooks.environment.wrote(b.id, { code: codeSoFar(json.get(e.index)!) });
+          } else if (e.type === "content_block_stop")
+            runs.set(b.id, hooks.environment.finish(b.id, b.input as RunInput));
         });
         const reply = await stream.finalMessage().catch((err) => {
           if (hooks.signal.aborted) this.keep(stream!, json);
@@ -123,7 +117,7 @@ export class Agent {
       if (!hooks.signal.aborted) throw err;
     } finally {
       hooks.signal.removeEventListener("abort", stop);
-      run?.stop();
+      hooks.environment.stop();
     }
   }
 
@@ -189,9 +183,9 @@ function codeSoFar(json: string): string {
   }
 }
 
-// Returns the answer to one call of run: what it printed and its error, the pictures of the page it asked for,
-// taken once all its code has run, and the pictures in its folder it asked to see. `cut` says the reply was cut off at
-// the token limit.
+// Returns the answer to one call of run as the Messages API takes it: what it printed and its error, then the
+// pictures of the page it asked for, taken once all its code has run, and the pictures in its folder it asked to see.
+// `cut` says the reply was cut off at the token limit.
 async function answer(
   id: string,
   ran: Promise<Ran> | undefined,
@@ -202,28 +196,20 @@ async function answer(
   const r = await ran;
   hooks.ran?.(r);
   if (hooks.signal.aborted) return { type: "tool_result", tool_use_id: id, content: STOPPED };
-  const lines = [...(cut ? [CUT] : []), ...r.printed, ...(r.error ? [`Error: ${r.error}`] : [])];
-  const pictures = [];
-  for (const peek of r.peeks) {
-    const p = await hooks.look(peek),
-      when = peek.t === undefined ? "" : `, with every animation ${peek.t} seconds after its start`;
-    pictures.push(
-      {
-        type: "image" as const,
-        source: { type: "base64" as const, media_type: "image/jpeg" as const, data: p.picture },
-      },
-      { type: "text" as const, text: `The page from x = ${p.left} to ${p.right}, y = ${p.top} to ${p.bottom}${when}.` },
-    );
-  }
-  for (const v of r.views)
-    pictures.push(
-      { type: "image" as const, source: { type: "base64" as const, media_type: "image/jpeg" as const, data: v.jpeg } },
-      { type: "text" as const, text: `The file ${v.path}.` },
-    );
+  const a = await hooks.environment.answer(r);
+  const lines = [...(cut ? [CUT] : []), ...a.lines];
+  const pictures = a.pictures.map((b) =>
+    b.type === "text"
+      ? b
+      : {
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: "image/jpeg" as const, data: b.jpeg },
+        },
+  );
   return {
     type: "tool_result",
     tool_use_id: id,
     content: [{ type: "text", text: lines.join("\n") || "Done." }, ...pictures],
-    is_error: Boolean(r.error),
+    is_error: Boolean(a.error),
   };
 }

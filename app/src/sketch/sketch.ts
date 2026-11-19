@@ -6,7 +6,8 @@
  *
  * Besides p5's functions and constants, the agent gets three of its own that fit p5's way of keeping settings:
  * part("tree.leaf3") puts what is drawn next in a part, hand(0.5) sets how much what is drawn next wavers as a hand's
- * drawing does, and push() and pop() keep both; write() writes in the agent's hand in the stroke colour of the moment.
+ * drawing does, and push() and pop() keep both; write() writes in the agent's hand in the stroke colour of the moment,
+ * and image() lays a picture from the agent's folder in the part of the moment.
  * background() sets the colour of the paper. brush paints with p5.brush's media: p5 works out each brush shape's
  * outline in page units, and the outline becomes a brush mark, which the page paints with p5.brush.
  */
@@ -38,11 +39,13 @@ interface Pen {
 
 /**
  * Where the sketch's ink goes. Each function that makes ink returns its id. write is given what the agent gave it,
- * with the colour, opacity and part of the moment added. view gives the part of the page the person sees.
+ * with the colour, opacity and part of the moment added, and image what the agent gave it with the part of the moment.
+ * view gives the part of the page the person sees.
  */
 interface Sink {
   draw(drawn: Drawn): number;
   write(given: object & Pen): number;
+  image(given: object & { part?: string }): Promise<number>;
   background(color: string): void;
   view(): Box;
 }
@@ -212,7 +215,7 @@ export function sketch(sink: Sink): Sketch {
     },
   });
 
-  const added: Pick<typeof Api, "part" | "hand" | "write"> & Pick<typeof BrushApi, "brush"> = {
+  const added: Pick<typeof Api, "part" | "hand" | "write" | "image"> & Pick<typeof BrushApi, "brush"> = {
     brush: brushes.brush,
     part(name) {
       part = name === undefined ? undefined : new Given("part", { part: name }).part();
@@ -223,6 +226,7 @@ export function sketch(sink: Sink): Sketch {
       hand = amount;
     },
     write: (o) => sink.write({ ...o, ...now() }),
+    image: (o) => sink.image({ ...o, part }),
   };
   const own = {
     ...added,

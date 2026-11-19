@@ -1,27 +1,20 @@
 /**
- * brush, which your code calls besides p5's and the page's own functions, paints with p5.brush's real media, which
- * leave grain, pressure and bleeding paint. As a p5 shape has a stroke and a fill, a brush shape is painted with up
- * to five media at once, each on until it is turned off, laid in this order:
- * - a flat wash of solid colour inside a closed shape, for a ground or a flat area of colour;
- * - a watercolour wash inside a closed shape, which bleeds past its edge and pools where it dries;
- * - massing inside a closed shape: layers of curved strokes of a brush, for charcoal, pastel or pencil tone;
- * - hatching across the inside of a closed shape, parallel strokes of the stroke's brush, for engraving, shading and
- *   tone; two hatchings at different angles cross-hatch;
- * - a stroke along the shape, with one of eleven brushes: a fine pen, hard to soft pencils, a coloured pencil, a
- *   marker, crayon, charcoal, pastel or spray, or a brush you make with brush.add.
- * Choose the media for the picture's style: a pen drawing with hatched shadows, a soft pencil or charcoal sketch,
- * coloured pencil, pastel or crayon, a marker comic, a watercolour with ink lines, a dark painting lit by light paint,
- * or any mix of them.
- * Paint covers what is under it as far as it is opaque. A flat wash at 255 hides what is under it, a watercolour wash
- * is thin and lets it show, and pale paint shows on a dark paper, so a picture may start from background() in any
- * colour and be painted up from dark to light or from light to dark.
- * brush's shapes follow p5's translate, rotate and scale, take part() and are one ink each, as p5's do. brush starts
- * with a stroke of "HB" in your colour at weight 1 and no other media. push() and pop() keep its settings.
- * Every brush shape is painted on its own, so a picture of thousands of tiny brush shapes is slow: give a stroke many
- * points, or a mass or a hatching a large shape, rather than drawing many little ones. For strokes that flow, as water,
- * wind, hair or grass do, work out each stroke's points along a flow with noise() and draw it with brush.spline.
- * brush's ink animates as any ink does: paint it in parts and pose them in a frame function. In a frame function, draw
- * with p5's shapes, not brush, since each brush shape there would be painted anew for every picture, which is slow.
+ * brush paints with real media from p5.brush, which leave grain, pressure and bleeding paint.
+ * A brush shape can be painted with up to five media at once. Each medium stays on until you turn it off, and they are
+ * laid in this order:
+ * - a flat wash, which fills a closed shape with solid colour;
+ * - a watercolour wash, which bleeds past the shape's edge and pools as it dries;
+ * - massing, which builds tone from layers of curved strokes, as charcoal, pastel or pencil does;
+ * - hatching, which fills a closed shape with parallel strokes;
+ * - a stroke along the shape, with one of the brushes below or one you make with brush.add.
+ * Paint hides what is under it as far as the paint is opaque.
+ * Brush lines are thinner than p5's lines. At weight 1, the pens and pencils draw lines under 1 unit wide, crayon,
+ * charcoal and marker draw lines about 2 units wide, and pastel and spray draw lines about 8 units wide. At weight 3,
+ * each line is 3 to 6 times as wide, and darker. p5's own line is 3 units wide and solid.
+ * brush's shapes follow p5's translate, rotate and scale, and take part(), as p5's shapes do. brush starts with an "HB"
+ * pencil stroke at weight 1 and no other media. push() and pop() keep its settings.
+ * Each brush shape is painted separately, which is slow, so draw a few long strokes or large masses rather than
+ * thousands of small shapes. In a frame function, draw with p5's shapes, not brush.
  * Example: brush.set("rotring", "#222222", 1); brush.hatch(4, 30); brush.circle(200, 200, 60);
  */
 import type { Point } from "./api.ts";

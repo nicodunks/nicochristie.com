@@ -1,14 +1,14 @@
 /**
- * What the person did to the sheet since the agent's last turn. The agent is told of it when the person presses
- * Send, and Undo and Redo step through it. The history keeps the sheet as it was before the first thing the person
- * did and after each thing, so Undo and Redo put back one of those. Undo reaches back to the last Send and no
- * further, because the agent's turn changes the sheet too.
+ * What the person did to the sheet since the agent was last told. Undo and Redo step through it. The history keeps
+ * the sheet as it was before the first thing the person did and after each thing, so Undo and Redo put back one of
+ * those. Undo reaches back to when the agent was last told and no further, because the agent's turn changes the sheet
+ * too.
  */
 import type { Snapshot } from "../paint/sheet.ts";
 import { sheet } from "./state.ts";
 
 const states: Snapshot[] = [], // the sheet before the first thing done, and then after each thing done
-  told: string[] = [], // what the agent is told of each thing done: told[i] took states[i] to states[i + 1]
+  texts: string[] = [], // what the agent is told of each thing done: texts[i] took states[i] to states[i + 1]
   watchers: (() => void)[] = [];
 let at = 0; // how many of the things done stand: the sheet is as states[at] has it
 
@@ -30,9 +30,9 @@ export function did(text: string, change: () => void): void {
   change();
   // what Undo took back is gone for good once the person does something new
   states.length = at + 1;
-  told.length = at;
+  texts.length = at;
   states.push(sheet.snapshot());
-  told.push(text);
+  texts.push(text);
   at++;
   for (const fn of watchers) fn();
 }
@@ -45,12 +45,13 @@ export const redo = (): void => go(at + 1);
 
 /** Returns how many things there are for Undo to take back, and for Redo to do again. */
 export function steps(): { undo: number; redo: number } {
-  return { undo: at, redo: told.length - at };
+  return { undo: at, redo: texts.length - at };
 }
 
-/** Returns what the agent is told the person did, in order, and forgets it all: the person's turn is sent. */
-export function tell(): string[] {
-  const lines = told.slice(0, at);
-  states.length = told.length = at = 0;
-  return lines;
+/** Returns what the person did since the agent was last told, in order, as the agent is told it. */
+export const done = (): string[] => texts.slice(0, at);
+
+/** Forgets what the person did, since the agent has been told, so that Undo reaches back no further. */
+export function told(): void {
+  states.length = texts.length = at = 0;
 }

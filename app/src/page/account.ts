@@ -1,9 +1,13 @@
 /**
- * The page's requests to the gateway, the Worker at API. No one signs in: anyone can draw and send. The gateway takes
- * a drawing's first request only with a Turnstile token, which proves a browser and not a script sent it, so when the
- * gateway answers 403 with the header x-check, post() gets a token and asks again. Getting one shows nothing, unless
- * Turnstile has a question for the person (check, below).
+ * The page's requests to the gateway, the Worker at API. No one signs in: anyone can draw, talk and send, and the
+ * Worker bounds what it spends instead. It takes a drawing's first request only with a Turnstile token, which proves a
+ * browser and not a script sent it, so when it answers 403 with the header x-check, post() gets a token and asks again.
+ * Getting one shows nothing, unless Turnstile has a question for the person (check, below).
+ *
+ * /draw's version of this module signs people in and holds their credits; this one keeps its functions, so the modules
+ * taken from /draw need no change.
  */
+import { say } from "./caption.ts";
 import { drawing } from "./state.ts";
 
 // The Worker's address. On this computer it is the `wrangler dev` server, since the deployed Worker takes requests only
@@ -19,14 +23,14 @@ interface Turnstile {
 }
 declare const turnstile: Turnstile;
 
-let script: Promise<void> | undefined, sitekey: Promise<string> | undefined;
-
 /**
  * Whether the bot check stays out of sight. The turn that opens a visit sets `quiet`, since the person did not ask for
  * it: then a check that would stop to question the person fails instead. Otherwise such a check shows its box at the
  * top of the window, for the person to answer, and the request goes on once they have.
  */
 export const check = { quiet: false };
+
+let script: Promise<void> | undefined, sitekey: Promise<string> | undefined;
 
 /** Resolves with a Turnstile token for the action "sheet"; fails if the check fails, or is quiet and has a question. */
 async function token(): Promise<string> {
@@ -84,3 +88,16 @@ export async function post(path: string, body: unknown, signal: AbortSignal): Pr
   if (r.status !== 403 || !r.headers.has("x-check")) return r;
   return send({ token: await token() });
 }
+
+/** Returns whether the person may go on to what needs an account: always, here, since no one signs in. */
+export async function mayGoOn(_reason: string): Promise<boolean> {
+  return true;
+}
+
+/** Says why a turn was refused, such as the Worker's spending cap: /draw offers credits here, this site only says so. */
+export function offer(reason: string): void {
+  say(reason);
+}
+
+/** Shows the person's balance of credits: none here. */
+export async function showBalance(): Promise<void> {}

@@ -35,13 +35,24 @@ import {
 
 const LONGEST_MOVE = 10; // the most seconds a move may take
 const LONGEST_STICKER = 16; // the most UTF-16 units a sticker's emoji may have
+const PICTURE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/; // a picture as a data URL
 
-/** The ops that make ink without needing the sheet: the shapes of a p5 call, and handwriting. */
-type Inks = "draw" | "write";
+/** The ops that make ink without needing the sheet: the shapes of a p5 call, handwriting, and a picture. */
+type Inks = "draw" | "write" | "image";
 
 /** The names of the ops: what changes the page. */
 export type Fn =
-  Inks | "background" | "erase" | "move" | "copy" | "setPart" | "arrange" | "animate" | "removeAnimation" | "show";
+  | Inks
+  | "background"
+  | "erase"
+  | "move"
+  | "copy"
+  | "setPart"
+  | "arrange"
+  | "animate"
+  | "retime"
+  | "removeAnimation"
+  | "show";
 
 /** One call of a function that changes the page: `id` is the id of the ink it makes, if it makes ink. */
 export interface Op {
@@ -64,8 +75,8 @@ export type Done =
 
 /**
  * A picture of the page that the agent's code asked for: of the box with its left edge at `x`, its top at `y`, `width`
- * units wide and `height` units tall, with every animation `t` seconds after its start, or with the ink at rest if `t`
- * is left out.
+ * units wide and `height` units tall, with the animations as they show `t` seconds after they all start, or with the
+ * ink at rest if `t` is left out.
  */
 export interface Peek extends Box {
   t?: number;
@@ -78,7 +89,7 @@ export interface Peek extends Box {
  * {kind: "line" | "fill", color, opacity, width, points, crayon?} in page units, or a brush shape, as brushMark()
  * reads it. A line runs along its points' pieces, and a fill fills its points' rings. crayon: true marks a line that
  * colours a fill in. "write" is given a box, the text, and its colour, opacity
- * and part.
+ * and part. "image" is given a box, `src`, the picture as a PNG, JPEG or WebP data URL, and its opacity and part.
  */
 const INK: Record<Inks, (g: Given, id: number) => Mark[]> = {
   draw: (g, id) => {
@@ -107,6 +118,29 @@ const INK: Record<Inks, (g: Given, id: number) => Mark[]> = {
     if (!pieces.length) return [];
     const mark = { id, by: "agent" as const, made: "write", part: g.part(), opacity: g.opacity() };
     return [{ kind: "line", ...mark, color: g.color("color"), text, pieces: pieces.map((p) => even(p, width)) }];
+  },
+  image: (g, id) => {
+    const src = g.text("src"),
+      { x, y, width, height } = g.box();
+    if (!PICTURE.test(src)) g.fail("src must be a PNG, JPEG or WebP picture as a data URL");
+    return [
+      {
+        kind: "image",
+        id,
+        by: "agent",
+        made: "image",
+        part: g.part(),
+        color: "black",
+        opacity: g.opacity(),
+        src,
+        at: [
+          [x, y],
+          [x + width, y],
+          [x, y + height],
+        ],
+        cuts: [],
+      },
+    ];
   },
 };
 
@@ -292,14 +326,26 @@ const ACTS: Record<Exclude<Fn, Inks>, (sheet: Sheet, g: Given, id: number) => Do
       name: g.name("name"),
       frame: g.has("frame") ? g.text("frame") : g.fail("frame must be a function, (t, data) => { ... }"),
       data: g.value("data"),
+      at: g.optional("at"),
       seconds: g.optional("seconds"),
       sticker: g.has("sticker") ? g.text("sticker") : "✨",
     };
+    if (animation.at !== undefined && animation.at < 0) g.fail("at must be 0 or more");
     if (animation.seconds !== undefined && animation.seconds <= 0) g.fail("seconds must be more than 0");
     if (animation.sticker.length > LONGEST_STICKER) g.fail("sticker must be one emoji");
     const replaced = sheet.animations.get(animation.name);
     sheet.animations.set(animation.name, animation);
     return { did: "animated", animation, replaced };
+  },
+  retime: (sheet, g) => {
+    const name = g.name("name"),
+      was = sheet.animations.get(name) ?? g.fail(`there is no animation called "${name}"`),
+      at = g.optional("at") ?? was.at,
+      seconds = g.optional("seconds") ?? was.seconds;
+    if (at !== undefined && at < 0) g.fail("at must be 0 or more");
+    if (seconds !== undefined && seconds <= 0) g.fail("seconds must be more than 0");
+    sheet.animations.set(name, { ...was, at, seconds });
+    return { did: "changed" };
   },
   removeAnimation: (sheet, g) => {
     const name = g.name("name");
@@ -342,6 +388,7 @@ interface Host {
 interface Inking {
   draw(given: object): number;
   write(given: object): number;
+  image(given: object): number;
   background(color: string): void;
 }
 
@@ -361,6 +408,7 @@ type Paint = Pick<
   | "print"
   | "render"
   | "animate"
+  | "retime"
   | "removeAnimation"
 >;
 
@@ -382,6 +430,7 @@ export function painter(sheet: Sheet, host: Host): { paint: Paint; inking: Inkin
   const inking: Inking = {
     draw: (given) => call("draw", given),
     write: (given) => call("write", given),
+    image: (given) => call("image", given),
     background: (color) => void call("background", { color }),
   };
   const paint: Paint = {
@@ -395,6 +444,7 @@ export function painter(sheet: Sheet, host: Host): { paint: Paint; inking: Inkin
       const frame = fields(o).frame;
       call("animate", { ...fields(o), frame: typeof frame === "function" ? String(frame) : undefined });
     },
+    retime: (o) => void call("retime", o),
     removeAnimation: (name) => void call("removeAnimation", { name }),
     show: (o) => void call("show", o),
     ink: (within) => sheet.ink(within === undefined ? undefined : new Given("ink", within).box()),

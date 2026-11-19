@@ -27,7 +27,7 @@ export interface Saved {
   data: Uint8Array;
 }
 
-/** The agent's files, by path, such as "/photos/1.jpg". They last as long as the page stays open. */
+/** The agent's files, by path, such as "/code/1.js". They last as long as the page stays open. */
 export type Folder = Record<string, Saved>;
 
 /** A picture in the folder that a block asked to see: its path, and the picture as a base64 JPEG. */
@@ -100,7 +100,7 @@ export class Run {
     private applied: (ops: Op[]) => Promise<string | undefined>,
     serve: (need: Need) => Promise<unknown>,
   ) {
-    this.caller = new Caller<Ask, Answer>("/draw/run.js", LIMIT, serve as (need: unknown) => Promise<unknown>);
+    this.caller = new Caller<Ask, Answer>("run.js", LIMIT, serve as (need: unknown) => Promise<unknown>);
   }
 
   /** Takes the input of call `id` as written so far, and sends each block of its new code that is now whole. */

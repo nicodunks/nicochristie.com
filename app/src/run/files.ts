@@ -1,6 +1,6 @@
 /**
  * The agent's folder, as its code reaches it in the run worker. The folder holds files by path, such as
- * "/photos/1.jpg": the photos the person attached, and what the agent's code wrote or downloaded. The code lists,
+ * "/code/1.js": what the agent's code wrote or downloaded, and any files copied in for it. The code lists,
  * reads, writes and edits files, reads a picture's pixels, and asks to see a picture. It also searches with Brave and
  * downloads files, which the worker cannot do itself, so it asks the page, which asks the gateway.
  *
@@ -68,9 +68,30 @@ export async function seen(path: string): Promise<string> {
   return jpeg(await decoded(path));
 }
 
-/** Returns a picture's bytes as a base64 JPEG no larger than LONGEST on its longest side. */
-export async function shrunk(file: Saved): Promise<string> {
-  return jpeg(await drawn(file, "this file"));
+/**
+ * Returns the picture at a path, shrunk to LONGEST on its longest side, as a WebP data URL, which keeps its
+ * transparency, or PNG where the browser cannot write WebP; and its width and height in pixels.
+ */
+export async function laid(path: string): Promise<Laid> {
+  return webp(await decoded(path));
+}
+
+/** Returns a picture the person chose from their device as laid() returns one; throws if the file is not a picture. */
+export async function picked(file: Blob): Promise<Laid> {
+  return webp(await drawn({ type: file.type, data: new Uint8Array(await file.arrayBuffer()) }, "this file"));
+}
+
+/** A picture to lay on the page: a data URL, and its width and height in pixels. */
+type Laid = { src: string; width: number; height: number };
+
+// Returns what is on a canvas as a WebP data URL, or PNG where the browser cannot write WebP, with its size.
+async function webp(c: OffscreenCanvas): Promise<Laid> {
+  const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
+  return {
+    src: `data:${blob.type};base64,${base64(new Uint8Array(await blob.arrayBuffer()))}`,
+    width: c.width,
+    height: c.height,
+  };
 }
 
 // Returns the path if it is one: it starts with "/".
@@ -113,7 +134,13 @@ async function drawn(file: Saved, name: string): Promise<OffscreenCanvas> {
 
 // Returns what is on a canvas as a base64 JPEG.
 async function jpeg(canvas: OffscreenCanvas): Promise<string> {
-  const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 })).arrayBuffer());
+  return base64(
+    new Uint8Array(await (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 })).arrayBuffer()),
+  );
+}
+
+// Returns bytes in base64.
+function base64(bytes: Uint8Array): string {
   let text = "";
   for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(text);

@@ -1,6 +1,6 @@
 /**
- * The few words beside the buttons: what the agent is doing, with a pulsing dot, what went wrong, or a link to open
- * or copy.
+ * The few words under the buttons: what the agent is doing, with a pulsing dot, what went wrong, or a note that goes
+ * away by itself.
  */
 const caption = document.getElementById("caption")!;
 
@@ -10,11 +10,8 @@ export function say(text: string, doing = false): void {
   caption.className = doing ? "busy" : "";
 }
 
-/** Shows `text` followed by `link`, which the person can open in a new tab, or copy by right-clicking or holding it. */
-export function sayLink(text: string, link: string): void {
-  const a = document.createElement("a");
-  a.href = a.textContent = link;
-  a.target = "_blank";
-  caption.replaceChildren(`${text} `, a);
-  caption.className = "";
+/** Shows `text` for `seconds`, then takes it away, unless something else has been said since. */
+export function sayFor(text: string, seconds: number): void {
+  say(text);
+  setTimeout(() => caption.textContent === text && say(""), seconds * 1000);
 }

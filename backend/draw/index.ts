@@ -3,12 +3,11 @@
  * at offpolicyinc.com/draw. The page keeps the sheet and the conversation and runs the agent's code; the gateway adds
  * the key, the prompt and the tool, and passes the conversation to the model.
  *
- *   POST /api/draw/messages   {page, model, mode?, messages, token?}: the conversation so far of the drawing `page`,
- *                             and the name of the model the page chose, one of MODELS: Opus with the brush, which
- *                             is all this site shows, and Sonnet with the pen. Sol, OpenAI's, goes through
- *                             openai.ts, or to Sonnet while the secret OPENAI_API_KEY is not set. The gateway sends it to
- *                             that model with the agent's prompt and tool, and streams the reply back as the SDK's
- *                             MessageStream lines.
+ *   POST /api/draw/messages   {page, model, messages, token?}: the conversation so far of the drawing `page`, and the
+ *                             name of the model the page chose, one of MODELS (Opus). The gateway sends it to that
+ *                             model at EFFORT with the agent's prompt and tool, the prompt cached for an hour, and
+ *                             streams the reply back as the SDK's MessageStream lines. Each of the person's turns
+ *                             names the style they picked in its first line, so the prompt is the same for every call.
  *   POST /api/draw/search     {page, endpoint, params, token?}: a search with the Brave Search API, for the agent's
  *                             code (web.ts); 503 unless the secret BRAVE_API_KEY is set
  *   POST /api/draw/download   {page, url, token?}: one file from the web, for the agent's code (web.ts)
@@ -30,10 +29,8 @@
  * `wrangler dev --var DRAW_NO_CHECK:1` skips the bot check; the deployed Worker never has that var.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
-import type { MessageParam, Usage } from "@anthropic-ai/sdk/resources/messages";
-import { EFFORT, EFFORTS, MAX_TOKENS, MODE, MODELS, MODES, type Mode, TOOLS, prompt } from "./agent.ts";
-import { respond } from "./openai.ts";
+import type { MessageParam, ThinkingConfigParam, Usage } from "@anthropic-ai/sdk/resources/messages";
+import { EFFORT, EFFORTS, MAX_TOKENS, MODELS, SYSTEM, TOOLS } from "./agent.ts";
 import { type WebEnv, download, search } from "./web.ts";
 
 interface Statement {
@@ -44,7 +41,6 @@ interface Statement {
 
 interface Env extends WebEnv {
   ANTHROPIC_API_KEY: string;
-  OPENAI_API_KEY?: string;
   DRAW_MODEL?: string;
   DRAW_EFFORT?: string;
   DB: { prepare(query: string): Statement };
@@ -67,6 +63,7 @@ interface Shared {
 const PAGE = /^[\w-]{1,64}$/; // a drawing's name: when it was started, and a random end
 const LARGEST = 10_000_000; // the largest request body taken, in bytes
 const DAY = 86400; // seconds
+const BOUND = { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } }; // thinking whose prompt changed is dropped
 const CENT = 10_000; // micros in one US cent
 // what a call holds while it runs: the price of 100,000 tokens of fresh input and 10,000 of output
 const HELD = { input_tokens: 100_000, output_tokens: 10_000 };
@@ -76,7 +73,7 @@ const say = (status: number, text: string, headers: Record<string, string> = {})
 
 /** Returns what a call to the model, by the name the page shows, that used these tokens cost, in micros. */
 function cost(model: string, used: Partial<Usage> | undefined): number {
-  const { prices, over } = MODELS[model];
+  const { prices, over } = MODELS[model] as { prices: number[]; over?: { from: number; prices: number[] } };
   const n = [
     used?.input_tokens ?? 0,
     used?.cache_creation_input_tokens ?? 0,
@@ -84,7 +81,9 @@ function cost(model: string, used: Partial<Usage> | undefined): number {
     used?.output_tokens ?? 0,
   ];
   const p = over && n[0] + n[1] + n[2] >= over.from ? over.prices : prices;
-  return Math.round(n.reduce((sum, tokens, i) => sum + tokens * p[i], 0));
+  // the written price is for a write kept 5 minutes; a write kept an hour costs twice the price of fresh input
+  const hour = used?.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+  return Math.round(n.reduce((sum, tokens, i) => sum + tokens * p[i], 0) + hour * (2 * p[0] - p[1]));
 }
 
 /** Answers one request under /api/draw/: see the routes at the top. The Worker has already checked its origin. */
@@ -152,14 +151,9 @@ async function converse(
   if (typeof asked !== "string" || !Object.hasOwn(MODELS, asked) || !Array.isArray(messages) || !messages.length)
     return say(422, `Send {page, model, messages}, with model one of ${Object.keys(MODELS).join(", ")}.`);
   // DRAW_MODEL, one of MODELS, takes every call whatever the page asked for, and DRAW_EFFORT sets how hard it thinks:
-  // for trying a model on this computer with `wrangler dev --var`. Otherwise, without OpenAI's key, a call for one of
-  // OpenAI's models goes to Sonnet, so the page still draws.
-  const forced = env.DRAW_MODEL && Object.hasOwn(MODELS, env.DRAW_MODEL) ? env.DRAW_MODEL : undefined,
-    chosen = forced ?? (MODELS[asked].id.startsWith("openai/") && !env.OPENAI_API_KEY ? "Sonnet" : asked),
+  // for trying a model on this computer with `wrangler dev --var`.
+  const chosen = env.DRAW_MODEL && Object.hasOwn(MODELS, env.DRAW_MODEL) ? env.DRAW_MODEL : asked,
     effort = EFFORTS.includes(env.DRAW_EFFORT ?? "") ? env.DRAW_EFFORT! : EFFORT;
-  const modes = Object.keys(MODES) as Mode[],
-    mode = modes.find((m) => m === given.mode) ?? MODE;
-  if (given.mode !== undefined && mode !== given.mode) return say(422, `The mode is one of ${modes.join(", ")}.`);
 
   const id = crypto.randomUUID(),
     caps = [env.DRAW_PAGE_CENTS, env.DRAW_IP_CENTS, env.DRAW_DAY_CENTS].map((c) => Number(c) * CENT),
@@ -183,37 +177,23 @@ async function converse(
   const settle = (used: Partial<Usage> | undefined) =>
     env.DB.prepare("UPDATE draw_calls SET micros=? WHERE id=?").bind(cost(chosen, used), id).run();
 
-  const model = MODELS[chosen].id,
-    system = prompt(mode),
-    stopped = new AbortController(); // aborted when the visitor stops the reply, to stop a call to OpenAI
-  // OpenAI's models are named with their maker: openai.ts makes the call and turns the reply into Anthropic's format
-  const answer = model.startsWith("openai/")
-    ? respond(
-        env.OPENAI_API_KEY ?? "",
-        {
-          model: model.slice("openai/".length),
-          system,
-          tools: TOOLS,
-          messages: messages as MessageParam[],
-          effort,
-          max_tokens: MAX_TOKENS,
-          page,
-        },
-        stopped.signal,
-      )
-    : undefined;
-  const stream = answer
-    ? MessageStream.fromReadableStream(answer.body)
-    : (env.CLAUDE ?? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })).messages.stream({
-        model,
-        max_tokens: MAX_TOKENS,
-        output_config: { effort: effort as "low" },
-        system,
-        tools: TOOLS,
-        cache_control: { type: "ephemeral" },
-        messages: messages as MessageParam[],
-      });
-  stream.controller?.signal.addEventListener("abort", () => stopped.abort());
+  const stream = (env.CLAUDE ?? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })).messages.stream(
+    {
+      model: MODELS[chosen].id,
+      max_tokens: MAX_TOKENS,
+      output_config: { effort: effort as "low" },
+      // A thinking block is bound to the system prompt it was written under, which changes with each prompt deployed;
+      // Claude then drops the stale thinking instead of refusing the conversation.
+      thinking: BOUND as ThinkingConfigParam,
+      // The breakpoint on the prompt caches the tools and the prompt for an hour, which every drawing shares; the
+      // top-level one caches the conversation, which only later calls of the same drawing share.
+      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral", ttl: "1h" } }],
+      tools: TOOLS,
+      cache_control: { type: "ephemeral" },
+      messages: messages as MessageParam[],
+    },
+    { headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" } },
+  );
   request.signal?.addEventListener("abort", () => stream.abort()); // the visitor pressed Stop, or left
   const done = stream.finalMessage().then(
     (reply) => settle(reply.usage),
@@ -226,7 +206,7 @@ async function converse(
   );
   ctx?.waitUntil(done);
   try {
-    await (answer ? answer.connected : stream.withResponse());
+    await stream.withResponse();
   } catch (err) {
     const status = err instanceof Anthropic.APIError && err.status ? err.status : 502;
     return say(status, `The model answered ${status}: ${err instanceof Error ? err.message : String(err)}`);

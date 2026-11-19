@@ -9,7 +9,7 @@ import HAND from "../../hand.json";
 import { START } from "../paint/constants.ts";
 import { apply } from "../paint/ops.ts";
 import { Sheet, type Snapshot } from "../paint/sheet.ts";
-import { OPEN } from "./state.ts";
+import { OPEN } from "../canvas/state.ts";
 
 /** A stretch of a paragraph's words: plain, or a link, whose ink is in the part `to` under the paragraph's. */
 type Stretch = string | { text: string; to: string; href: string };

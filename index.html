@@ -1,19 +1,19 @@
 <!doctype html>
-<!-- Nico Christie's homepage: one white sheet that the visitor and an agent both draw on, which opens with the words
-     about Nico as the agent's ink. Built from app/index.html by app/build.mjs; its script is draw/app.js, from app/src/page. -->
+<!-- Nico Christie's homepage: /draw's sheet, which the visitor and an agent draw on, opening on the words about Nico as
+     the agent's ink. app/build.mjs writes it to ../index.html with the canvas's styles and elements at the markers. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <title>Nico Christie</title>
     <meta name="description" content="Nico Christie. San Francisco, CA. Creator of Shortcut.ai, now at Off Policy." />
     <!-- the Worker the page sends its turns to (backend/) -->
     <meta name="draw-api" content="https://nico-personal-api.writearena.workers.dev" />
-    <title>Nico Christie</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/cuba-flag.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/cuba-flag-32.png" />
     <link rel="apple-touch-icon" href="/assets/icons/cuba-flag-180.png" />
@@ -24,22 +24,6 @@
         font-family: "Patrick Hand";
         src: url("/draw/fonts/patrick-hand.woff2") format("woff2");
         font-display: swap;
-      }
-      /* out of sight, but read by screen readers and search engines */
-      #about {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
-      }
-      /* This site has no menu, no shelf of saved drawings and no speaking: their buttons stay in the page, unseen, so
-         the page's script is the same as the drawing agent's. */
-      #more,
-      #drawings,
-      #speak {
-        display: none !important;
       }
       html,
       body {
@@ -56,213 +40,537 @@
         touch-action: pan-x pan-y; /* two fingers and a double tap never zoom the browser's page, so the buttons stay put */
         font-family: -apple-system, system-ui, sans-serif;
       }
-      #sheet {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        touch-action: none;
-        /* a small pen whose tip, at (3, 17) of its 20 pixels, is where the ink goes */
-        cursor:
-          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%23fff' stroke='%231d1d1f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6'/%3E%3Cpath fill='%231d1d1f' d='M4 20l.6-2.4 1.8 1.8z'/%3E%3C/svg%3E")
-            3 17,
-          crosshair;
-      }
-      /* a small eraser whose lower corner, at (4, 16) of its 20 pixels, is the middle of what it rubs out */
-      #sheet.eraser {
-        cursor:
-          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%23fff' stroke='%231d1d1f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5z'/%3E%3Cpath fill='%23f4a3b4' d='M8 9.5l6.5 6.5L12 20.5H9l-5-5a1.5 1.5 0 0 1 0-2.1z'/%3E%3C/svg%3E")
-            4 16,
-          cell;
-      }
-      /* the ring around the eraser's point, the shape and size of what it rubs out (rubber.ts) */
-      #rubber {
-        position: fixed;
-        left: 0;
-        top: 0;
-        box-sizing: border-box;
-        border: 1.5px solid #44423d;
-        border-radius: 50%;
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.9),
-          inset 0 0 0 1px rgba(255, 255, 255, 0.9);
-        background: rgba(255, 255, 255, 0.35);
-        pointer-events: none;
-      }
-      #rubber[hidden] {
-        display: none;
-      }
-      #sheet.hand {
-        cursor: grab;
-      }
-      #sheet.hand.held {
-        cursor: grabbing;
-      }
-      /* the bot check's box, which shows only when the check has a question for the person (account.ts) */
-      #check {
-        position: fixed;
-        top: 72px;
-        left: 50%;
-        translate: -50% 0;
-        z-index: 5;
-      }
-      #check[hidden] {
-        display: none;
-      }
-      /* the paper's grain, very faint clouds of digits (backdrop.ts) */
-      #grain {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-      }
-      /* the stroke being drawn, on a canvas of its own over the sheet, so a stroke does not redraw the whole sheet */
-      #live {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-      }
-      /* the tool in the agent's hand: its tip rides the line being revealed, held at a slant, rocking a little; it lifts
-         and glides to each new mark, and fades away when no ink is being drawn */
-      #nib {
-        position: absolute;
-        left: 0;
-        top: 0;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.3s;
-      }
-      #nib.on {
-        opacity: 1;
-        transition: opacity 0.1s;
-      }
-      #nib.up {
-        transition:
-          transform 0.12s ease-out,
-          opacity 0.1s;
-      }
-      #nib svg {
-        position: absolute;
-        left: -2.4px;
-        top: -11.9px;
-        width: 76px;
-        height: 23.75px;
-        overflow: visible;
-        transform-origin: 2.4px 11.9px;
-        rotate: -38deg;
-        filter: drop-shadow(2px 3px 0 rgba(68, 66, 61, 0.25));
-        animation: rock 0.45s ease-in-out infinite alternate;
-        transition:
-          scale 0.12s,
-          filter 0.12s;
-      }
-      #nib.up svg {
-        scale: 1.15;
-        filter: drop-shadow(6px 8px 1px rgba(68, 66, 61, 0.2));
-      }
-      @keyframes rock {
-        from {
-          transform: rotate(-4deg);
-        }
-        to {
-          transform: rotate(3deg);
-        }
-      }
-      /* the stickers of the animations lie on the sheet: the page's script sets the transform that takes page units
-         to the window, and --k, the window's pixels for one page unit, so that a sticker is never too small to tap */
-      #stickers {
-        position: absolute;
-        left: 0;
-        top: 0;
-        transform-origin: 0 0;
-        pointer-events: none;
-      }
-      #stickers .sticker {
-        position: absolute;
-        width: 40px;
-        height: 40px;
-        margin: -20px;
-        padding: 0;
-        border: none;
-        border-radius: 50%;
-        background: #fff;
-        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
-        font-size: 22px;
-        line-height: 40px;
-        cursor: pointer;
-        pointer-events: auto;
-        rotate: -7deg;
-        scale: max(1, calc(0.7 / var(--k, 1)));
-      }
-      /* On this site the stickers do not lie on the sheet where their animations are: they line up in a row at the
-         top left of the window, in the order the animations were made, and wrap to a second row if there are many.
-         These rules override the place the page's script gives the strip and each sticker. */
-      #stickers {
-        top: max(14px, env(safe-area-inset-top));
-        left: 16px;
-        max-width: calc(100% - 300px);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        transform: none !important;
-      }
-      #stickers .sticker {
-        position: static;
-        flex: none;
-        margin: 0;
-        scale: 1;
-      }
-      /* a sticker whose animation is running */
-      #stickers .sticker.on {
-        box-shadow:
-          0 0 0 3px #2c49c9,
-          0 1px 6px rgba(0, 0, 0, 0.3);
-      }
-      /* the two bars: only a thumb takes the pointer, so a stroke along the right or the bottom edge draws */
-      .bar {
-        position: absolute;
-        pointer-events: none;
-      }
-      #bar {
-        right: 0;
-        top: 70px;
-        bottom: 96px;
-        width: 26px;
-      }
-      #barx {
-        bottom: 0;
-        left: 14px;
-        right: 26px;
-        height: 10px;
-      }
-      .bar div {
-        pointer-events: auto;
-        touch-action: none;
-        position: absolute;
-        border-radius: 5px;
-        background: rgba(0, 0, 0, 0.25);
-      }
-      #bar div {
-        right: 6px;
-        width: 10px;
-      }
-      #barx div {
-        bottom: 1px;
-        height: 8px;
-      }
-      .bar.held div {
-        background: rgba(0, 0, 0, 0.45);
-      }
-      #bar.held div {
-        width: 14px;
-      }
+      /* The canvas's styles, which the build puts into each page that shows the canvas. */
+#sheet {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+/* the pointer over the sheet is the tool the person holds: the pen with its tip at the point, the eraser, or a hand */
+#sheet.pen {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6' stroke='white' stroke-width='4'/%3E%3Cpath d='M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6' fill='white' stroke='%2344423d' stroke-width='1.8'/%3E%3C/svg%3E")
+      4 20,
+    crosshair;
+}
+#sheet.eraser {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5zM8 9.5l6.5 6.5M9 20.5h11' stroke='white' stroke-width='4'/%3E%3Cpath d='M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5zM8 9.5l6.5 6.5M9 20.5h11' fill='white' stroke='%2344423d' stroke-width='1.8'/%3E%3C/svg%3E")
+      6 18,
+    cell;
+}
+#sheet.hand {
+  cursor: grab;
+}
+#sheet.select {
+  cursor: default;
+}
+/* the circle the eraser rubs out, which follows the pointer while the person holds the eraser */
+#ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 1.5px solid #44423d;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+#ring[hidden] {
+  display: none;
+}
+#sheet.hand.held {
+  cursor: grabbing;
+}
+/* what lies over the sheet for the Select tool, placed in the window's pixels over boxes of the sheet; the layer
+   itself takes no pointer, so the pen draws through it */
+#frames {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#frames > div {
+  position: absolute;
+}
+#frames button {
+  position: absolute;
+  padding: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+/* what Select picked: a dashed frame, which moves it when dragged, with a knob that resizes it and a bin that deletes
+   it; the faint outline of what a press would pick, under a mouse; and the rectangle a drag on empty paper draws to
+   pick what it touches. The knob and the bin are small to see but large to touch */
+#frames .picked {
+  outline: 1.5px dashed #3e63dd;
+  outline-offset: 6px;
+  border-radius: 4px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+#frames .hover {
+  outline: 1.5px solid rgb(62 99 221 / 0.35);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
+#frames .band {
+  box-sizing: border-box;
+  border: 1.5px dashed #3e63dd;
+  border-radius: 4px;
+  background: rgb(62 99 221 / 0.06);
+}
+#frames .picked button {
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+}
+#frames .bin {
+  right: -22px;
+  top: -50px;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+#frames .bin.below {
+  top: auto;
+  bottom: -50px;
+}
+#frames .bin .icon {
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border: 1.5px solid #44423d;
+  border-radius: 50%;
+  background: #fffdf7;
+  box-shadow: 1.5px 1.5px 0 #44423d;
+}
+#frames .knob {
+  right: -28px;
+  bottom: -28px;
+  width: 44px;
+  height: 44px;
+  cursor: nwse-resize;
+}
+#frames .knob::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #3e63dd;
+  border-radius: 50%;
+  background: #fffdf7;
+}
+/* the stroke being drawn, on a canvas of its own over the sheet, so a stroke does not redraw the whole sheet */
+#live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* the tool in the agent's hand: its tip rides the line being revealed, held at a slant, rocking a little; it lifts
+   and glides to each new mark, and fades away when no ink is being drawn */
+#nib {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#nib.on {
+  opacity: 1;
+  transition: opacity 0.1s;
+}
+#nib.up {
+  transition:
+    transform 0.12s ease-out,
+    opacity 0.1s;
+}
+#nib svg {
+  position: absolute;
+  left: -2.4px;
+  top: -11.9px;
+  width: 76px;
+  height: 23.75px;
+  overflow: visible;
+  transform-origin: 2.4px 11.9px;
+  rotate: -38deg;
+  filter: drop-shadow(2px 3px 0 rgba(68, 66, 61, 0.25));
+  animation: rock 0.45s ease-in-out infinite alternate;
+  transition:
+    scale 0.12s,
+    filter 0.12s;
+}
+#nib.up svg {
+  scale: 1.15;
+  filter: drop-shadow(6px 8px 1px rgba(68, 66, 61, 0.2));
+}
+@keyframes rock {
+  from {
+    transform: rotate(-4deg);
+  }
+  to {
+    transform: rotate(3deg);
+  }
+}
+/* the animations' stickers, each over its place on the page: the layer lets presses through to the sheet, and only
+   the stickers take them */
+#stickers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#stickers .sticker {
+  position: absolute;
+  translate: -50% -50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  font-size: 17px;
+  line-height: 30px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+/* a sticker being dragged follows the pointer, from its place */
+#stickers .sticker.dragged {
+  margin: -15px 0 0 -15px;
+  translate: none;
+  cursor: grabbing;
+}
+/* a sticker whose animation runs */
+#stickers .sticker.on {
+  background: #dbe4fb;
+}
+/* an animation that failed */
+#stickers .off {
+  opacity: 0.4;
+}
+/* the two bars: only a thumb takes the pointer, so a stroke along the right or the bottom edge draws */
+.bar {
+  position: absolute;
+  pointer-events: none;
+}
+#bar {
+  right: 0;
+  top: 70px;
+  bottom: 96px;
+  width: 26px;
+}
+#barx {
+  bottom: 0;
+  left: 14px;
+  right: 26px;
+  height: 10px;
+}
+.bar div {
+  pointer-events: auto;
+  touch-action: none;
+  position: absolute;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+}
+#bar div {
+  right: 6px;
+  width: 10px;
+}
+#barx div {
+  bottom: 1px;
+  height: 8px;
+}
+.bar.held div {
+  background: rgba(0, 0, 0, 0.45);
+}
+#bar.held div {
+  width: 14px;
+}
+/* every button is a sticker of paper with a pencilled outline, labelled in a handwriting font */
+button {
+  font:
+    18px "Patrick Hand",
+    cursive;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 2px solid #44423d;
+  background: #fff;
+  color: #44423d;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.35;
+}
+/* a hand-drawn icon from the page's sprite, in the colour of the text around it, its lines made to wobble */
+.icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#wobble);
+}
+/* the tools: a small card at the bottom right, where a thumb reaches, in rows of icons, swatches and colours */
+/* the card stacks its rows from the bottom up, so that the bottom row stays still while the others open above it */
+#tools {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  padding: 6px;
+  border: 2px solid #44423d;
+  border-radius: 18px;
+  background: #fffdf7;
+  box-shadow: 4px 4px 0 #44423d;
+}
+#tools .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#tools .colors {
+  display: grid;
+  grid-template-columns: repeat(6, auto);
+  justify-content: space-between;
+}
+#tools button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: none;
+}
+#tools button.on {
+  border-color: #44423d;
+  background: #fff;
+}
+/* a line between groups in a row */
+#tools hr {
+  align-self: stretch;
+  width: 2px;
+  margin: 4px 2px;
+  border: none;
+  border-radius: 1px;
+  background: #d8d4ca;
+}
+/* the sizes, fade and colours show only while the blob of the pen's colour has opened them; they fit in the width
+   of the open bottom row, so that they never widen the card further */
+#tools:not(.open) .styles,
+#tools:not(.open) .colors,
+#tools:not(.wiping) .wiper {
+  display: none;
+}
+/* at rest the bottom row holds only Select, the hand, the pen, the eraser and the colour */
+#tools:not(.open) .more {
+  display: none;
+}
+/* the eraser's size: a slider between a small and a big dot */
+#tools .wiper {
+  gap: 8px;
+  padding: 4px 6px;
+}
+.wiper .dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid #44423d;
+  border-radius: 50%;
+}
+.wiper .dot.big {
+  width: 18px;
+  height: 18px;
+}
+#wiper {
+  flex: 1;
+  width: 0;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+#wiper::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#wiper::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#wiper::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -8px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+#wiper::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+/* a size: a squiggle as the pen would draw it, in its colour and width */
+.swatch {
+  display: block;
+  width: 26px;
+  height: 19px;
+}
+.swatch path {
+  fill: none;
+  stroke-linecap: round;
+}
+/* the fade: a slider whose track runs from clear at its left to the pen's colour, solid, at its right */
+#fader {
+  flex: 1;
+  width: 0; /* the fade takes the room the sizes leave, and adds none of its own */
+  margin: 0 4px;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+#fader::-webkit-slider-runnable-track {
+  height: 8px;
+  border: 1px solid #d8d4ca;
+  border-radius: 5px;
+  background: linear-gradient(90deg, transparent, var(--ink));
+}
+#fader::-moz-range-track {
+  height: 8px;
+  border: 1px solid #d8d4ca;
+  border-radius: 5px;
+  background: linear-gradient(90deg, transparent, var(--ink));
+}
+#fader::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+#fader::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+/* a colour, as a blob of paint */
+.blob {
+  display: block;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid #44423d;
+  border-radius: 52% 48% 55% 45% / 50% 55% 45% 50%;
+}
+/* the zoom, at the top left: the zoom in percent, which grows down over the sheet to show a slider, zoomed in at
+   the top and out at the bottom. In the row it takes only the room of the percent. */
+#zoom {
+  position: relative;
+  width: 64px;
+  height: 38px;
+  flex: none;
+}
+#lens {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  border-radius: 17px;
+  background: #fff; /* so that the slider shows over ink */
+  pointer-events: auto;
+}
+/* the percent keeps its height, so that it stays still while the slider opens under it */
+#zoom #zoomed {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 38px;
+  padding: 0;
+  font-size: 16px;
+}
+#slider {
+  position: relative;
+  height: 130px;
+}
+#slider[hidden] {
+  display: none;
+}
+/* the slider runs left to right, turned a quarter so that its left end, zoomed out, is at the bottom */
+#zoomer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 110px;
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+#zoomer::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#zoomer::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#zoomer::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -7px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+#zoomer::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+
       /* the caption has no box: it reads as Claude's own thoughts, pencilled faintly on the sheet */
+      /* the caption lies under the row of buttons, so that however long it is, it never moves them */
       #caption {
-        align-self: center;
+        position: absolute;
+        top: calc(100% + 10px);
+        left: 0;
+        right: 0;
         display: flex;
+        justify-content: center;
         align-items: center;
         gap: 8px;
+        text-align: center;
         padding: 4px 6px;
         font-size: 19px;
         font-family: "Bradley Hand", "Noteworthy", "Segoe Print", cursive;
@@ -270,12 +578,6 @@
         color: #2c49c9;
         opacity: 0.7;
         pointer-events: none;
-      }
-      #caption a {
-        color: inherit;
-        pointer-events: auto;
-        -webkit-user-select: text;
-        user-select: text;
       }
       #caption:empty {
         display: none;
@@ -305,41 +607,18 @@
         gap: 8px;
         pointer-events: none;
       }
-      /* every button is a sticker of paper with a pencilled outline, labelled in a handwriting font */
-      button {
-        font:
-          18px "Patrick Hand",
-          cursive;
-        padding: 6px 16px;
-        border-radius: 999px;
-        border: 2px solid #44423d;
-        background: #fff;
-        color: #44423d;
-        cursor: pointer;
-      }
-      button:disabled {
-        opacity: 0.35;
-      }
-      /* a hand-drawn icon from the page's sprite, in the colour of the text around it, its lines made to wobble */
-      .icon {
-        flex: none;
-        width: 22px;
-        height: 22px;
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        filter: url(#wobble);
-      }
       #acts {
+        position: relative;
         display: flex;
+        align-items: flex-start;
         gap: 10px;
       }
+      /* the top buttons are slim: 10 px either side of their words */
       #buttons button {
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        padding: 6px 10px;
         box-shadow: 3px 3px 0 #44423d;
         pointer-events: auto;
       }
@@ -350,36 +629,25 @@
       #buttons [hidden] {
         display: none;
       }
-      #send {
-        background: #3e63dd;
-        color: #fff;
+      /* New and Share are their words alone */
+      :is(#new, #share) .icon {
+        display: none;
       }
-      /* while the wait before the turn sends itself runs (autosend.ts), a darker blue fills Send from the left */
-      #send[data-timing] {
-        background-image: linear-gradient(#2a47b0, #2a47b0);
-        background-repeat: no-repeat;
-        background-size: 0% 100%;
-        animation: timing 2s linear forwards;
-      }
-      @keyframes timing {
-        to {
-          background-size: 100% 100%;
+      /* a phone's top bar has room for one row: New and Share are their icons alone, and the zoom, which a phone has
+         little use for, since it zooms with a pinch, is left out */
+      @media (max-width: 600px) {
+        #buttons :is(#new, #share) {
+          padding: 6px;
+        }
+        :is(#new, #share) .icon {
+          display: block;
+        }
+        :is(#new, #share) span,
+        #buttons #zoom {
+          display: none;
         }
       }
-      #send.stop,
-      #speak.on,
-      #type.on {
-        background: #e5484d;
-        color: #fff;
-      }
-      #brush.on,
-      #more.on,
-      #drawings.on,
-      #trace.on {
-        background: #44423d;
-        color: #fff;
-      }
-      /* Menu and My drawings stay at the top left, and every other button at the top right */
+      /* Menu, the style and the zoom stay at the top left, and every other button at the top right */
       #left {
         position: relative;
         display: flex;
@@ -390,35 +658,61 @@
       #buttons .round {
         padding: 6px;
       }
-      /* Menu and My drawings are their icons alone, with no outline */
-      #buttons #more,
-      #buttons #drawings {
-        border-color: transparent;
-        background: none;
-        box-shadow: none;
-        transform: none;
+      #buttons #zoom #zoomed {
+        width: 52px;
       }
-      #buttons #more.on,
-      #buttons #drawings.on {
-        background: #44423d;
-      }
-      /* Menu, My drawings and the zoom have no outline, so a soft patch shows under the pointer instead */
-      @media (hover: hover) {
-        #buttons #more:not(.on):hover,
-        #buttons #drawings:not(.on):hover,
-        #zoomed:hover {
-          background: #ece8de;
+      @keyframes scribbled {
+        from {
+          opacity: 0;
+          transform: scale(0.6) rotate(-8deg);
+        }
+        12% {
+          opacity: 1;
+          transform: scale(1.08) rotate(2deg);
+        }
+        20% {
+          transform: scale(1) rotate(0);
+        }
+        80% {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
         }
       }
-      /* the menu: a card of paper under Menu, with a row for each thing it does */
-      #panel {
+      @media (prefers-reduced-motion: reduce) {
+        #saved {
+          animation: none;
+        }
+      }
+      /* the style picker: a button showing the chosen style's stroke, which opens a card of every style under it */
+      #style {
+        position: relative;
+      }
+      /* the button is a circle the size of Menu's, with the chosen style's stroke across it */
+      #buttons #styled {
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        overflow: hidden;
+      }
+      #styled img {
+        flex: none;
+      }
+      #style img {
+        display: block;
+        width: 48px;
+        height: 24px;
+        border-radius: 6px;
+      }
+      #styles {
         position: absolute;
         top: calc(100% + 12px);
         left: 0;
         z-index: 2;
         display: flex;
         flex-direction: column;
-        gap: 0;
         padding: 4px;
         border: 2px solid #44423d;
         border-radius: 18px;
@@ -426,12 +720,23 @@
         box-shadow: 4px 4px 0 #44423d;
         pointer-events: auto;
       }
-      #panel[hidden] {
+      #styles[hidden] {
         display: none;
       }
-      #panel button,
-      #panel a,
-      #panel label {
+      #styles button {
+        gap: 10px;
+        padding: 4px 12px 4px 6px;
+        border: none;
+        border-radius: 10px;
+        box-shadow: none;
+        background: none;
+        white-space: nowrap;
+      }
+      #styles button:hover,
+      #styles button.on {
+        background: #f1eee6;
+      }
+      :is(#panel, #sharecard) :is(button, a, label) {
         display: flex;
         align-items: center;
         gap: 8px;
@@ -448,286 +753,178 @@
         text-decoration: none;
         cursor: pointer;
       }
-      #panel button:hover,
-      #panel a:hover,
-      #panel label:hover {
+      :is(#panel, #sharecard) :is(button, a, label):hover {
         background: #f1eee6;
       }
-      /* the balance is a row of the menu that does nothing; the amounts of credit on sale are rows under it */
-      #credit {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 4px 10px 4px 6px;
-        border-top: 2px dashed #d9d4c7;
-        margin-top: 4px;
-        font:
-          18px "Patrick Hand",
-          cursive;
-      }
-      #credit[hidden] {
-        display: none;
-      }
-      #topup {
-        display: contents;
-      }
-      /* each amount lines up with the words of the rows above it, past where their icons are */
-      #topup button {
-        padding-left: 36px;
-      }
-      #panel select {
-        margin-left: auto;
-        padding: 0 6px;
-        font: inherit;
-        color: inherit;
-        border: 2px solid #44423d;
-        border-radius: 10px;
-        background: #fff;
-      }
-      /* a phone has room for the label of Send only */
-      @media (max-width: 520px) {
-        #buttons button {
-          padding: 6px 10px;
+      @keyframes dim {
+        from {
+          background: rgba(68, 66, 61, 0);
         }
       }
-      /* the sign-in screen covers the whole page when the person does something that needs an account, with doodles
-         that pop in around the title */
-      #signin {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-        background: #fffdf7;
-        color: #44423d;
-        text-align: center;
-      }
-      #signin[hidden] {
-        display: none;
-      }
-      #signin .card {
-        position: relative;
-        width: min(100%, 440px);
-        padding: 96px 0 104px;
-      }
-      #signin .doodles {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        fill: none;
-        stroke-width: 5;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-      #signin .doodles path {
-        transform-box: fill-box;
-        transform-origin: center;
-        transform: scale(0);
-        animation: pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) forwards;
-      }
-      #signin .doodles path:nth-child(2) {
-        animation-delay: 0.3s;
-      }
-      #signin .doodles path:nth-child(3) {
-        animation-delay: 0.6s;
-      }
-      #signin .doodles path:nth-child(4) {
-        animation-delay: 0.9s;
-      }
-      @keyframes pop {
-        to {
-          transform: scale(1);
+      @keyframes settle {
+        from {
+          opacity: 0;
+          transform: translateY(10px) scale(0.97);
         }
-      }
-      #signin h1 {
-        position: relative;
-        margin: 0;
-        font:
-          clamp(48px, 14vw, 64px) / 1 "Patrick Hand",
-          cursive;
-        color: #3e63dd;
-        transform: rotate(-3deg);
-      }
-      #signin p {
-        position: relative;
-        margin: 10px 0 28px;
-        font:
-          26px "Patrick Hand",
-          cursive;
-      }
-      #signin button {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        gap: 12px;
-        padding: 10px 24px;
-        font:
-          24px "Patrick Hand",
-          cursive;
-        border: 2px solid #44423d;
-        border-radius: 999px;
-        background: #fff;
-        box-shadow: 4px 4px 0 #44423d;
-        transition:
-          transform 0.1s,
-          box-shadow 0.1s;
-      }
-      #signin button:hover {
-        transform: translate(-1px, -1px) rotate(-1deg);
-        box-shadow: 5px 5px 0 #44423d;
-      }
-      #signin button:active {
-        transform: translate(3px, 3px);
-        box-shadow: 1px 1px 0 #44423d;
-      }
-      #signin #later,
-      #signin #later:hover,
-      #signin #later:active {
-        display: block;
-        margin: 18px auto 0;
-        padding: 4px 12px;
-        font-size: 20px;
-        border: none;
-        background: none;
-        box-shadow: none;
-        transform: none;
-        color: #6f6d66;
-        text-decoration: underline;
       }
       @media (prefers-reduced-motion: reduce) {
-        #signin .doodles path {
+        :is(#signin, #offer),
+        :is(#signin, #offer) .card {
           animation: none;
-          transform: none;
         }
       }
-      /* the shelf of saved drawings, over the left of the sheet, under the buttons and above the tools */
-      #shelf {
-        position: absolute;
-        left: 0;
-        top: calc(max(12px, env(safe-area-inset-top)) + 44px);
-        bottom: calc(max(10px, env(safe-area-inset-bottom)) + 70px);
-        width: min(220px, 70vw);
-        box-sizing: border-box;
-        padding: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        touch-action: pan-y;
-        border-radius: 0 8px 8px 0;
-        background: #fbfaf8;
-        box-shadow: 1px 0 10px rgba(0, 0, 0, 0.16);
-        color: #8a877f;
-        font-size: 14px;
-      }
-      #shelf[hidden] {
+      /* each mode shows its own parts: the form for signing up, logging in or a reset; the note for checking the email,
+         under "Almost there!" */
+      #signin:not([data-mode="check"]) #why,
+      #signin[data-mode="check"] :is(#google, .or, #pass),
+      #signin:not([data-mode="check"]) #checking,
+      #signin[data-mode="reset"] :is(#google, .or, .tabs, #password),
+      #signin:not([data-mode="in"]) #forgot,
+      #signin:not([data-mode="reset"]) #back {
         display: none;
       }
       .cover {
         position: relative;
-        flex: none;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
+        display: grid;
+        gap: 2px;
         cursor: pointer;
       }
       .cover img {
         width: 100%;
-        max-height: 160px;
+        aspect-ratio: 4 / 3;
+        box-sizing: border-box;
         object-fit: contain;
-        border-radius: 6px;
-        border: 1px solid #e4e1da;
+        border: 2px solid #d9d4c7;
+        border-radius: 10px;
         background: #fff;
+        rotate: -0.6deg;
+      }
+      .cover:nth-child(even) img {
+        rotate: 0.6deg;
+      }
+      .cover:hover img {
+        border-color: #8a867c;
       }
       .cover.open img {
-        border-color: #2c49c9;
-        box-shadow: 0 0 0 2px #2c49c9;
+        border-color: #44423d;
+        box-shadow: 3px 3px 0 #44423d;
       }
-      .cover button {
+      .cover.open span {
+        color: #44423d;
+      }
+      /* Share and Delete: small buttons on the corner of each drawing */
+      .cover .acts {
         position: absolute;
-        top: -6px;
-        right: -6px;
-        padding: 0 6px;
-        font-size: 14px;
-        line-height: 18px;
+        top: 6px;
+        right: 6px;
+        display: flex;
+        gap: 6px;
       }
+      .cover .acts button {
+        display: grid;
+        padding: 3px;
+        border: 2px solid #44423d;
+        border-radius: 10px;
+        background: #fffdf7;
+        box-shadow: 2px 2px 0 #44423d;
+      }
+      .cover .acts .icon {
+        width: 18px;
+        height: 18px;
+      }
+      @keyframes pop {
+        from {
+          transform: translateX(-50%) rotate(-1deg) scale(0.4);
+          opacity: 0;
+        }
+      }
+      /* the bottom of the page: the person's side of the conversation at the left, and the tools at the right */
+      /* the bottom row: the composer, with the notes above it, in the middle, and the tools at the right */
       #under {
         position: absolute;
         left: 14px;
         right: 14px;
         bottom: max(10px, env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 240px) minmax(0, 1fr); /* the swirl stays in the middle */
+        align-items: end;
+        gap: 12px;
+        pointer-events: none;
+      }
+      #chat {
+        grid-column: 2;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 8px;
-        pointer-events: none;
       }
-      /* the notes: a chat column three bubbles high, the newest at the bottom; a swipe up shows the older ones */
+      /* the notes: what the person said and typed, a bubble and a half high with the newest at the bottom, fading out
+         at the top; a swipe up shows the older ones */
       #notes {
-        align-self: flex-start;
-        max-width: 100%;
-        max-height: 108px;
+        max-height: 42px;
         display: flex;
         flex-direction: column;
         align-items: flex-start;
-        gap: 6px;
+        gap: 2px;
         overflow-y: auto;
         overscroll-behavior: contain;
         scrollbar-width: none;
-        padding: 0 6px 6px 0; /* room for the hard shadow of the note being typed, which the scrolling would cut off */
       }
       #notes.more {
-        mask-image: linear-gradient(transparent, #000 24px);
+        mask-image: linear-gradient(transparent, #000 20px);
+      }
+      /* above the swirl, one line in light grey: what the person is saying while the swirl listens, or the last thing
+         live voice sent. A line too long for the row is cut at its start, since its end sits at the row's right and
+         overflows to the left, so the last words stay in view. */
+      #heard {
+        display: flex;
+        justify-content: center;
+        color: #a9a59a;
+        font:
+          18px/1.3 "Patrick Hand",
+          cursive;
+      }
+      #heard:has(span:empty) {
+        display: none;
+      }
+      #heard span {
+        display: flex;
+        justify-content: flex-end;
+        max-width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        padding: 0 2px;
+      }
+      /* wider than a phone, the line is half the window wide, centred over the swirl, so more of it shows */
+      @media (min-width: 601px) {
+        #heard {
+          width: 50vw;
+          align-self: center;
+        }
+      }
+      #notes:empty {
+        display: none;
       }
       #notes,
-      .note,
-      .photo,
+      #composer,
       #tools {
         pointer-events: auto;
       }
-      #photos {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      .photo {
-        position: relative;
-        height: 56px;
-      }
-      .photo img {
-        height: 56px;
-        border-radius: 8px;
-        border: 1px solid #b9b5ab;
-      }
-      .photo.sent {
-        opacity: 0.5;
-      }
-      .photo button {
-        position: absolute;
-        top: -8px;
-        right: -8px;
-        padding: 0 6px;
-        font-size: 14px;
-        line-height: 18px;
-      }
-      /* a note is a chat bubble of the person's words, on one line until it is opened */
-      /* A note is a slip of the same paper as the tools card, in the page's handwriting: a quiet outline once it is
-         said, and the card's own hard shadow while it is being typed. */
+      /* a note is a bubble of the person's words, in their hand, on one line until it is tapped open */
       .note {
         flex: none;
         display: flex;
         align-items: center;
-        gap: 8px;
-        max-width: min(100%, 340px);
-        padding: 5px 13px 6px;
-        font:
-          17px/1.3 "Patrick Hand",
-          cursive;
+        gap: 4px;
+        max-width: 100%;
+        box-sizing: border-box;
+        padding: 2px 12px;
+        border: 1.5px solid #d9d4c7;
         border-radius: 14px 14px 14px 4px;
-        border: 1.5px solid #44423d;
-        background: #fffdf7;
         color: #44423d;
+        font:
+          18px/1.3 "Patrick Hand",
+          cursive;
         cursor: pointer;
       }
       .note span {
@@ -740,535 +937,426 @@
         white-space: normal;
         overflow-wrap: anywhere;
       }
+      /* a note the agent has been given is grey, with no outline, and a small dot before it */
       .note.sent {
-        border-color: #b9b5ab;
-        color: #8e8a80;
+        padding-top: 0;
+        padding-bottom: 0;
+        padding-left: 2px;
+        border-color: transparent;
+        color: #a9a59a;
       }
-      /* the note being typed fills the width, up to a line's worth */
-      #notes:has(.typing) {
-        align-self: stretch;
-      }
-      .note.typing {
-        align-self: stretch;
-        max-width: min(100%, 460px);
-        padding: 9px 16px 10px;
-        border: 2px solid #44423d;
-        border-radius: 16px;
-        box-shadow: 4px 4px 0 #44423d;
-        cursor: text;
-      }
-      /* at least 16px, since a phone zooms the whole page in when a box with smaller words is tapped */
-      .note input {
-        flex: 1;
-        min-width: 0;
-        padding: 0;
-        font: inherit;
-        font-size: 20px;
-        border: none;
-        outline: none;
-        background: none;
-        color: #1d1d1f;
-        caret-color: #3e63dd;
-      }
-      .note input::placeholder {
-        color: #b3aea2;
-        opacity: 1;
+      .note.sent::before {
+        content: "·";
+        font-weight: bold;
       }
       .note button {
-        padding: 0 4px;
+        padding: 0 2px 0 6px;
         border: none;
         background: none;
-        color: #8e8a80;
         font-size: 20px;
         line-height: 1;
       }
-      /* on a phone, while the keyboard is up for a typed note, the note is the one row above it */
-      @media (max-width: 600px) {
-        #under:has(.note input:focus) #bottom {
-          display: none;
-        }
-      }
-      /* the bottom row: the zoom at the left and the tools at the right */
-      #bottom {
+      /* the composer: a card like the tools', with the words being typed, the one Send and the voice swirl */
+      #composer {
         display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        gap: 10px;
-      }
-      /* the zoom: the zoom in percent, with no outline, which grows up over the sheet to show a slider, zoomed in at the
-         top and out at the bottom. In the row it takes only the room of the percent. */
-      #zoom {
-        position: relative;
-        width: 64px;
-        height: 34px;
-        flex: none;
-      }
-      #lens {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-        min-height: 100%;
-        border-radius: 17px;
-        background: #fff; /* so that the slider shows over ink */
-        pointer-events: auto;
-      }
-      /* the percent keeps its height, so that it stays still while the slider opens above it */
-      #zoomed {
-        height: 34px;
-        padding: 0;
-        border: none;
-        background: none;
-        font-size: 16px;
-      }
-      #slider {
-        position: relative;
-        height: 130px;
-      }
-      #slider[hidden] {
-        display: none;
-      }
-      /* the slider runs left to right, turned a quarter so that its left end, zoomed out, is at the bottom */
-      #zoomer {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 110px;
-        margin: 0;
-        transform: translate(-50%, -50%) rotate(-90deg);
-        appearance: none;
-        background: none;
-        cursor: pointer;
-      }
-      #zoomer::-webkit-slider-runnable-track {
-        height: 2px;
-        border-radius: 1px;
-        background: #44423d;
-      }
-      #zoomer::-moz-range-track {
-        height: 2px;
-        border-radius: 1px;
-        background: #44423d;
-      }
-      #zoomer::-webkit-slider-thumb {
-        appearance: none;
-        width: 16px;
-        height: 16px;
-        margin-top: -7px;
-        border: 2px solid #44423d;
-        border-radius: 50%;
-        background: #fff;
-      }
-      #zoomer::-moz-range-thumb {
-        width: 12px;
-        height: 12px;
-        border: 2px solid #44423d;
-        border-radius: 50%;
-        background: #fff;
-      }
-      /* the tools: a small card at the bottom right, where a thumb reaches, in rows of icons, swatches and colours */
-      /* the card stacks its rows from the bottom up, so that the bottom row stays still while the others open above it */
-      #tools {
-        display: flex;
-        flex-direction: column-reverse;
-        gap: 4px;
-        padding: 6px;
+        align-items: center;
+        gap: 2px;
+        box-sizing: border-box;
+        height: 48px; /* as tall as the tools bar beside it */
+        padding: 0 4px 0 6px;
         border: 2px solid #44423d;
         border-radius: 18px;
         background: #fffdf7;
         box-shadow: 4px 4px 0 #44423d;
+        color: #8a867c;
       }
-      #tools .row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      #tools .colors {
+      #composer .round {
         display: grid;
-        grid-template-columns: repeat(6, auto);
-        justify-content: space-between;
-      }
-      #tools button {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 3px;
+        padding: 4px;
         border: 2px solid transparent;
         border-radius: 10px;
         background: none;
       }
-      #tools button.on {
-        border-color: #44423d;
-        background: #fff;
-      }
-      /* a line between groups in a row */
-      #tools hr {
-        align-self: stretch;
-        width: 2px;
-        margin: 4px 2px;
-        border: none;
-        border-radius: 1px;
-        background: #d8d4ca;
-      }
-      /* the sizes, fade and colours show only while the blob of the pen's colour has opened them; they fit in the width
-         of the bottom row, so that opening them never widens the card */
-      #tools:not(.open) .styles,
-      #tools:not(.open) .colors {
-        display: none;
-      }
-      /* a size: a squiggle as the pen would draw it, in its colour and width */
-      .swatch {
-        display: block;
-        width: 26px;
-        height: 19px;
-      }
-      .swatch path {
-        fill: none;
-        stroke-linecap: round;
-      }
-      /* the fade: a slider whose track runs from clear at its left to the pen's colour, solid, at its right */
-      #fader {
-        flex: 1;
-        width: 0; /* the fade takes the room the sizes leave, and adds none of its own */
-        margin: 0 4px;
-        appearance: none;
-        background: none;
-        cursor: pointer;
-      }
-      #fader::-webkit-slider-runnable-track {
-        height: 8px;
-        border: 1px solid #d8d4ca;
-        border-radius: 5px;
-        background: linear-gradient(90deg, transparent, var(--ink));
-      }
-      #fader::-moz-range-track {
-        height: 8px;
-        border: 1px solid #d8d4ca;
-        border-radius: 5px;
-        background: linear-gradient(90deg, transparent, var(--ink));
-      }
-      #fader::-webkit-slider-thumb {
-        appearance: none;
-        width: 18px;
-        height: 18px;
-        margin-top: -6px;
-        border: 2px solid #44423d;
-        border-radius: 50%;
-        background: #fff;
-      }
-      #fader::-moz-range-thumb {
-        width: 14px;
-        height: 14px;
-        border: 2px solid #44423d;
-        border-radius: 50%;
-        background: #fff;
-      }
-      /* the eraser's size: a slider whose track swells from its left, small, to its right, big */
-      #wiper {
-        flex: 1;
-        width: 0;
-        height: 26px;
-        margin: 0 4px;
-        appearance: none;
-        background: none;
-        cursor: pointer;
-      }
-      #wiper::-webkit-slider-runnable-track {
-        height: 8px;
-        border: 1px solid #d8d4ca;
-        border-radius: 5px;
-        background: #ece8dd;
-      }
-      #wiper::-moz-range-track {
-        height: 8px;
-        border: 1px solid #d8d4ca;
-        border-radius: 5px;
-        background: #ece8dd;
-      }
-      #wiper::-webkit-slider-thumb {
-        appearance: none;
-        width: 18px;
-        height: 18px;
-        margin-top: -6px;
-        border: 2px solid #44423d;
-        border-radius: 50%;
-        background: #fff;
-      }
-      #wiper::-moz-range-thumb {
-        width: 14px;
-        height: 14px;
-        border: 2px solid #44423d;
-        border-radius: 50%;
-        background: #fff;
-      }
-      #tools:not(.wiping) .wipe {
-        display: none;
-      }
-      /* a colour, as a blob of paint */
-      .blob {
-        display: block;
-        width: 18px;
-        height: 18px;
-        box-sizing: border-box;
-        border: 2px solid #44423d;
-        border-radius: 52% 48% 55% 45% / 50% 55% 45% 50%;
-      }
-      /* the trace pane, for admins: this page's calls to Claude, over the right of the sheet, under the buttons and tools */
-      #trace.on {
-        background: #44423d;
+      #composer .round.on {
+        border-color: #e5484d;
+        background: #e5484d;
         color: #fff;
       }
-      /* the pane sits between the buttons and the tools, and its width is set by dragging its grip, the strip along
-         its left edge */
-      #pane {
-        position: absolute;
-        right: 0;
-        top: calc(max(12px, env(safe-area-inset-top)) + 44px);
-        bottom: calc(max(10px, env(safe-area-inset-bottom)) + 70px);
-        border-radius: 8px 0 0 8px;
-        overflow: hidden;
-        width: min(520px, 100vw);
-        display: flex;
-        background: #fbfaf8;
-        box-shadow: -1px 0 10px rgba(0, 0, 0, 0.16);
+      /* while live voice listens, the composer folds down to its button alone, in the middle: a paint swirl with no frame */
+      #composer {
+        view-transition-name: composer;
       }
-      #pane[hidden] {
+      /* the swirl, with the caption under it, their bottom level with the tools bar's */
+      #composer.live {
+        align-self: center;
+        flex-direction: column;
+        gap: 0;
+        height: auto;
+        padding: 0;
+        border: none;
+        background: none;
+        box-shadow: none;
+      }
+      #composer.live #talk {
+        height: 48px;
+        align-content: center;
+      }
+      #composer.live #caption {
+        position: static;
+        width: max-content;
+        max-width: 70vw;
+        padding: 0 4px;
+        transform-origin: 50% 0;
+        animation: speak 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+      }
+      /* while it asks to be tapped or says Send, the caption is larger, and tapping it is tapping the swirl */
+      #composer.asking #caption {
+        font-size: 22px;
+        opacity: 0.85;
+        pointer-events: auto;
+        cursor: pointer;
+      }
+      /* after Send, a small arrow, Send's own icon, so that it reads as a button */
+      #composer.sending #caption::after {
+        content: "";
+        width: 16px;
+        height: 16px;
+        background: currentColor;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 11.5L20.5 4l-5.5 16.5-3.5-6.5zM11.5 14l9-10'/%3E%3C/svg%3E")
+          center / contain no-repeat;
+      }
+      /* at the bottom left, the keyboard button, and the typing bar that takes its place: a box to type in with Send
+         inside it */
+      #typing {
+        grid-column: 1;
+        justify-self: start;
+        display: flex;
+        gap: 8px;
+        pointer-events: auto;
+      }
+      #typing:not(.on) #field,
+      #typing.on #keys {
         display: none;
       }
-      #grip {
-        flex: none;
-        width: 8px;
-        cursor: ew-resize;
-        touch-action: none;
-        border-right: 1px solid #e4e1da;
+      /* the keyboard button and live voice's are bare icons, with no outline; live voice's is red while it is on */
+      #keys,
+      #realtime {
+        display: grid;
+        place-content: center;
+        width: 48px;
+        height: 48px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: #44423d;
       }
-      #grip:hover,
-      #grip:active {
-        background: #e8ebf7;
+      #field {
+        box-sizing: border-box;
+        height: 48px; /* as tall as the tools bar */
+        border: 2px solid #44423d;
+        border-radius: 18px;
+        background: #fffdf7;
+        color: #44423d;
+        display: flex;
+        align-items: center;
+        width: 140px;
+        padding: 0 4px 0 10px;
       }
-      #log {
+      /* each new line grows out of the swirl's head */
+      @keyframes speak {
+        from {
+          scale: 0;
+          opacity: 0;
+        }
+      }
+      /* the voice button is always the paint swirl, a little taller than the composer's other buttons, so that it
+         spills just over the composer's edges; while it listens it grows */
+      #composer #talk {
+        padding: 0;
+        border-color: transparent;
+        background: none;
+      }
+      #talk svg {
+        display: block;
+        pointer-events: none;
+        width: 56px;
+        height: 56px;
+        margin: -14px -12px;
+      }
+      #composer.live #talk svg {
+        width: 62px;
+        height: 62px;
+        margin: -7px 0;
+      }
+      /* the swirl's ink outline shows only under the mouse, to say the swirl can be pressed */
+      #talk .outline {
+        display: none;
+      }
+      #talk:hover .outline {
+        display: inline;
+      }
+      /* the swirl is grey at rest, and in colour while it listens or while a tap would send the person's drawing */
+      #talk svg g {
+        filter: grayscale(1) opacity(0.45);
+        transition: filter 0.3s;
+      }
+      #talk.listening svg g,
+      #composer.sending #talk svg g {
+        filter: none;
+      }
+      /* 17px, since a phone zooms the whole page in when a box with words under 16px is tapped */
+      #say {
         flex: 1;
         min-width: 0;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        touch-action: pan-y;
-        padding: 16px;
+        padding: 4px;
+        border: none;
+        outline: none;
+        background: none;
+        color: #44423d;
+        font:
+          17px "Patrick Hand",
+          cursive;
+      }
+      #say::placeholder {
+        color: #a9a59a;
+      }
+      /* the notes are kept with the drawing but never shown */
+      #notes {
+        display: none;
+      }
+      /* the one Send: it sends whatever is new, and reads Stop while a turn is with the agent; it shows only then */
+      #send[hidden] {
+        display: none;
+      }
+      #send {
+        display: grid;
+        padding: 4px;
+        border-color: transparent;
+        background: none;
+        color: #44423d;
+      }
+      #send:active {
+        transform: translate(1px, 1px);
+      }
+      /* a phone: the composer takes a row of its own above the tools */
+      @media (max-width: 600px) {
+        #under {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-end;
+          row-gap: 8px;
+        }
+        #chat {
+          flex: 1 1 100%;
+        }
+        /* the keyboard button and the tools share the bottom row, under the swirl's */
+        #typing {
+          order: 1;
+        }
+        #tools {
+          order: 2;
+          margin-left: auto;
+        }
+        /* while a phone's keyboard is open no one draws, so the tools give their row to the drawing and the bottom
+           scroll bar, which the composer would sit on, hides */
+        body.typing :is(#tools, #barx) {
+          display: none;
+        }
+      }
+      #tools {
+        grid-column: 3;
+        justify-self: end;
+      }
+      /* ===== this site's own ===== */
+      /* the words about Nico, out of sight, but read by screen readers and search engines */
+      #about {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      /* the paper's grain, very faint clouds of digits (backdrop.ts) */
+      #grain {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      /* the bot check's box, which shows only when the check has a question for the person (account.ts) */
+      #check {
+        position: fixed;
+        top: 72px;
+        left: 50%;
+        translate: -50% 0;
+        z-index: 5;
+      }
+      #check[hidden] {
+        display: none;
+      }
+      /* Clear, at the top right, is its trash can alone, where /draw's New is its word */
+      #buttons #new {
+        padding: 6px;
+      }
+      #buttons #new .icon {
+        display: block;
       }
     </style>
   </head>
   <body>
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
-      <filter id="wobble">
-        <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="4" />
-        <feDisplacementMap in="SourceGraphic" scale="1.4" />
-      </filter>
-      <!-- the tools in the agent's hand, each lying along x with its tip at (0, 8), in the colour of its ink -->
-      <symbol id="t-pencil" viewBox="-2 -2 64 20">
-        <path fill="currentColor" d="M12 2h38v12H12z" />
-        <path fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="2" d="M14 6h34" />
-        <path fill="#f6dfb3" d="M12 2 0 8l12 6z" />
-        <path fill="currentColor" d="M4.5 5.8 0 8l4.5 2.2z" />
-        <path fill="#d9d4c7" d="M50 2h4v12h-4z" />
-        <path fill="#f4a3b4" d="M54 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-4z" />
-        <path
-          fill="none"
-          stroke="#44423d"
-          stroke-width="1.4"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-          d="M0 8 12 2h46a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H12zM12 2v12M50 2v12M54 2v12M4.5 5.8v4.4"
-        />
-      </symbol>
-      <symbol id="t-pen" viewBox="-2 -2 64 20">
-        <path fill="currentColor" d="M0 8c0-1.5 1.5-2.5 3-2.5h3v5H3C1.5 10.5 0 9.5 0 8z" />
-        <path fill="#fff" d="M6 5.5 14 3h34v10H14l-8-2.5z" />
-        <path fill="currentColor" d="M48 3h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H48z" />
-        <path
-          fill="none"
-          stroke="#44423d"
-          stroke-width="1.4"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-          d="M0 8c0-1.5 1.5-2.5 3-2.5h3L14 3h44a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H14l-8-2.5H3C1.5 10.5 0 9.5 0 8zM6 5.5v5M14 3v10M48 3v10"
-        />
-      </symbol>
-      <symbol id="t-crayon" viewBox="-2 -2 64 20">
-        <path fill="currentColor" d="M1 7.5 10 3h48v10H10L1 8.5z" />
-        <path fill="#fff" d="M18 3h30v10H18z" />
-        <path
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linejoin="round"
-          d="M22 5l3.5 3-3.5 3M40 5l3.5 3-3.5 3"
-        />
-        <path
-          fill="none"
-          stroke="#44423d"
-          stroke-width="1.4"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-          d="M1 7.5 10 3h48v10H10L1 8.5zM10 3v10M18 3v10M48 3v10"
-        />
-      </symbol>
-      <symbol id="i-menu" viewBox="0 0 24 24">
-        <path stroke-width="3.4" d="M12 5.5h.01M12 12h.01M12 18.5h.01" />
-      </symbol>
-      <symbol id="i-hand" viewBox="0 0 24 24">
-        <path
-          d="M8 13V6.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v6M17 10.5a1.5 1.5 0 0 1 3 0v3.5c0 4-2.7 7-6.5 7h-1c-2.4 0-3.8-.9-5.2-2.5L4 15.2a1.5 1.5 0 0 1 2.3-1.9L8 15"
-        />
-      </symbol>
-      <symbol id="i-brush" viewBox="0 0 24 24">
-        <path
-          d="M20.5 3.5a1.4 1.4 0 0 0-2 0l-9 9 2 2 9-9a1.4 1.4 0 0 0 0-2zM8.6 13.4c-2 0-3.6 1.5-3.6 3.5 0 1.4-.9 2.4-2 3 3.6.6 8.2-.4 8.2-4 0-1.1-.8-2.2-2.6-2.5z"
-        />
-      </symbol>
       <symbol id="i-trash" viewBox="0 0 24 24">
-        <path d="M4.5 6.5h15M9.5 6.5V4h5v2.5M6.5 6.5l1 14h9l1-14M10 10.5v6M14 10.5v6" />
-      </symbol>
-      <symbol id="i-mic" viewBox="0 0 24 24">
-        <path
-          d="M12 3.5c-1.8 0-3 1.3-3 3v5c0 1.8 1.2 3 3 3s3-1.2 3-3v-5c0-1.7-1.2-3-3-3zM6 11.5c0 3.6 2.6 6 6 6s6-2.4 6-6M12 17.5V21M9 21h6"
-        />
+        <path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10.5 10.5v6M13.5 10.5v6" />
       </symbol>
       <symbol id="i-plane" viewBox="0 0 24 24"><path d="M3.5 11.5L20.5 4l-5.5 16.5-3.5-6.5zM11.5 14l9-10" /></symbol>
       <symbol id="i-stop" viewBox="0 0 24 24">
         <path d="M7.5 7c3-.4 6-.3 9 .2.4 3 .3 6-.1 9.3-3 .3-6 .3-9-.1-.3-3-.3-6.2.1-9.4z" />
       </symbol>
-      <symbol id="i-trace" viewBox="0 0 24 24">
-        <path d="M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 12h6M9 16h3" />
-      </symbol>
-      <symbol id="i-undo" viewBox="0 0 24 24">
-        <path d="M8.5 14L4 9.5 8.5 5M4.5 9.5H14c3.3 0 6 2.5 6 5.5s-2.7 5.5-6 5.5h-3" />
-      </symbol>
-      <symbol id="i-redo" viewBox="0 0 24 24">
-        <path d="M15.5 14L20 9.5 15.5 5M19.5 9.5H10c-3.3 0-6 2.5-6 5.5s2.7 5.5 6 5.5h3" />
-      </symbol>
-      <symbol id="i-pen" viewBox="0 0 24 24">
-        <path
-          d="M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6"
-        />
-      </symbol>
-      <symbol id="i-eraser" viewBox="0 0 24 24">
-        <path
-          d="M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5zM8 9.5l6.5 6.5M9 20.5h11"
-        />
-      </symbol>
-      <symbol id="i-drawings" viewBox="0 0 24 24"><path d="M3.5 6h6l2 2.5h9v11h-17zM3.5 11h17" /></symbol>
-      <symbol id="i-photo" viewBox="0 0 24 24">
-        <path d="M3.5 8.5H7l1.8-3h6.4l1.8 3h3.5v11h-17zM12 10.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 1 0 0-7z" />
-      </symbol>
-      <symbol id="i-keep" viewBox="0 0 24 24"><path d="M6 3.5h8.5l3.5 3.5v13.5H6zM9 13.5l2.5 2.5 4-5" /></symbol>
-      <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3.5v11M7.5 10.5l4.5 4.5 4.5-4.5M4 16.5v4h16v-4" /></symbol>
-      <symbol id="i-bulb" viewBox="0 0 24 24">
-        <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2v.1h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" />
-      </symbol>
       <symbol id="i-keys" viewBox="0 0 24 24">
-        <path d="M3 6.5h18v11H3zM6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7 14h10" />
+        <path d="M3 6.5h18v11H3zM6.5 10h1M10 10h1M13.5 10h1M17 10h1M8 14h8" />
       </symbol>
-      <symbol id="i-dial" viewBox="0 0 24 24"><path d="M3.5 17a8.5 8.5 0 0 1 17 0M12 17l4.5-6" /></symbol>
-      <symbol id="i-coin" viewBox="0 0 24 24">
-        <path
-          d="M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 1 0 0-17zM14.5 9c-.5-1-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2-.5-2.5-1.5M12 6v1.5M12 16.5V18"
-        />
-      </symbol>
-      <symbol id="i-share" viewBox="0 0 24 24">
-        <path d="M12 15V3.5M7.5 8l4.5-4.5L16.5 8M8 11.5H4.5v9h15v-9H16" />
-      </symbol>
-      <symbol id="i-door" viewBox="0 0 24 24"><path d="M14 4H6v16h8M11 12h9.5M17 8.5l3.5 3.5-3.5 3.5" /></symbol>
     </svg>
-    <canvas id="sheet"></canvas>
-    <canvas id="live"></canvas>
-    <div id="stickers"></div>
-    <div id="nib" aria-hidden="true">
-      <svg viewBox="-2 -2 64 20"><use href="#t-pen" /></svg>
-    </div>
-    <div id="bar" class="bar"><div></div></div>
-    <div id="barx" class="bar"><div></div></div>
+    <!-- The canvas's elements and icons, which the build puts into each page that shows the canvas. -->
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <filter id="wobble">
+    <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="4" />
+    <feDisplacementMap in="SourceGraphic" scale="0.8" />
+  </filter>
+  <!-- the tools in the agent's hand, each lying along x with its tip at (0, 8), in the colour of its ink -->
+  <symbol id="t-pencil" viewBox="-2 -2 64 20">
+    <path fill="currentColor" d="M12 2h38v12H12z" />
+    <path fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="2" d="M14 6h34" />
+    <path fill="#f6dfb3" d="M12 2 0 8l12 6z" />
+    <path fill="currentColor" d="M4.5 5.8 0 8l4.5 2.2z" />
+    <path fill="#d9d4c7" d="M50 2h4v12h-4z" />
+    <path fill="#f4a3b4" d="M54 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-4z" />
+    <path
+      fill="none"
+      stroke="#44423d"
+      stroke-width="1.4"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+      d="M0 8 12 2h46a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H12zM12 2v12M50 2v12M54 2v12M4.5 5.8v4.4"
+    />
+  </symbol>
+  <symbol id="t-pen" viewBox="-2 -2 64 20">
+    <path fill="currentColor" d="M0 8c0-1.5 1.5-2.5 3-2.5h3v5H3C1.5 10.5 0 9.5 0 8z" />
+    <path fill="#fff" d="M6 5.5 14 3h34v10H14l-8-2.5z" />
+    <path fill="currentColor" d="M48 3h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H48z" />
+    <path
+      fill="none"
+      stroke="#44423d"
+      stroke-width="1.4"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+      d="M0 8c0-1.5 1.5-2.5 3-2.5h3L14 3h44a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H14l-8-2.5H3C1.5 10.5 0 9.5 0 8zM6 5.5v5M14 3v10M48 3v10"
+    />
+  </symbol>
+  <symbol id="t-crayon" viewBox="-2 -2 64 20">
+    <path fill="currentColor" d="M1 7.5 10 3h48v10H10L1 8.5z" />
+    <path fill="#fff" d="M18 3h30v10H18z" />
+    <path
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linejoin="round"
+      d="M22 5l3.5 3-3.5 3M40 5l3.5 3-3.5 3"
+    />
+    <path
+      fill="none"
+      stroke="#44423d"
+      stroke-width="1.4"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+      d="M1 7.5 10 3h48v10H10L1 8.5zM10 3v10M18 3v10M48 3v10"
+    />
+  </symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24">
+    <path
+      d="M8 13V6.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v6M17 10.5a1.5 1.5 0 0 1 3 0v3.5c0 4-2.7 7-6.5 7h-1c-2.4 0-3.8-.9-5.2-2.5L4 15.2a1.5 1.5 0 0 1 2.3-1.9L8 15"
+    />
+  </symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24">
+    <path d="M8.5 14L4 9.5 8.5 5M4.5 9.5H14c3.3 0 6 2.5 6 5.5s-2.7 5.5-6 5.5h-3" />
+  </symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24">
+    <path d="M15.5 14L20 9.5 15.5 5M19.5 9.5H10c-3.3 0-6 2.5-6 5.5s2.7 5.5 6 5.5h3" />
+  </symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24">
+    <path d="M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6" />
+  </symbol>
+  <symbol id="i-picture" viewBox="0 0 24 24">
+    <path
+      d="M4.5 5h15a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11A1.5 1.5 0 0 1 4.5 5z"
+    />
+    <path d="M3.5 16.5l5-5.2 4.3 4.4 2.6-2.6 5.1 5.1M15.5 9.5a1.6 1.6 0 1 0 0 .1" />
+  </symbol>
+  <symbol id="i-select" viewBox="0 0 24 24">
+    <path d="M5.5 3.5l13 7.2-5.6 1.5-2.6 5.6z" />
+  </symbol>
+  <symbol id="i-bin" viewBox="0 0 24 24">
+    <path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13h9l1-13M10 10v6.5M14 10v6.5" />
+  </symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24">
+    <path
+      d="M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5zM8 9.5l6.5 6.5M9 20.5h11"
+    />
+  </symbol>
+</svg>
+<canvas id="sheet"></canvas>
+<canvas id="live"></canvas>
+<div id="frames"></div>
+<div id="stickers"></div>
+<div id="nib" aria-hidden="true">
+  <svg viewBox="-2 -2 64 20"><use href="#t-pen" /></svg>
+</div>
+<div id="bar" class="bar"><div></div></div>
+<div id="barx" class="bar"><div></div></div>
+<div id="ring" hidden></div>
+
     <div id="under">
-      <div id="photos"></div>
-      <div id="notes"></div>
-      <div id="bottom">
+      <div id="typing">
+        <button id="keys" title="Type">
+          <svg class="icon"><use href="#i-keys" /></svg>
+        </button>
+        <div id="field">
+          <input id="say" type="text" placeholder="Draw me a…" enterkeyhint="send" autocomplete="off" />
+          <button id="send" title="Send" disabled>
+            <svg class="icon"><use href="#i-plane" /></svg>
+          </button>
+        </div>
+      </div>
+      <div id="chat">
+        <div id="notes"></div>
+        <div id="heard"><span></span></div>
+        <div id="composer">
+          <button id="talk" class="round" title="Voice"><svg></svg></button>
+        </div>
+      </div>
+      <div id="tools"></div>
+    </div>
+    <div id="buttons">
+      <div id="left">
+        <div id="style">
+          <button id="styled" class="round" title="Style"></button>
+          <div id="styles" hidden></div>
+        </div>
         <div id="zoom">
           <div id="lens">
+            <button id="zoomed" title="Zoom">100%</button>
             <div id="slider" hidden>
               <input id="zoomer" type="range" min="0" max="1" step="any" title="Zoom" />
             </div>
-            <button id="zoomed" title="Zoom">100%</button>
           </div>
-        </div>
-        <div id="tools"></div>
-      </div>
-    </div>
-    <div id="shelf" hidden></div>
-    <div id="buttons">
-      <div id="left">
-        <button id="more" class="round" title="Menu">
-          <svg class="icon"><use href="#i-menu" /></svg>
-        </button>
-        <button id="drawings" class="round" title="My drawings">
-          <svg class="icon"><use href="#i-drawings" /></svg>
-        </button>
-        <div id="panel" hidden>
-          <label
-            ><svg class="icon"><use href="#i-bulb" /></svg>Brain
-            <select id="model" title="Model">
-              <option>Sonnet</option>
-              <option>Haiku</option>
-              <option>Opus</option>
-              <option>Sol</option>
-            </select></label
-          >
-          <label id="effortRow" class="admin" hidden
-            ><svg class="icon"><use href="#i-dial" /></svg>Thinking
-            <select id="effort" title="Thinking">
-              <option>off</option>
-              <option>low</option>
-              <option selected>medium</option>
-              <option>high</option>
-              <option>xhigh</option>
-              <option>max</option>
-            </select></label
-          >
-          <label id="modeRow"
-            ><svg class="icon"><use href="#i-pen" /></svg>Mode
-            <select id="mode" title="Mode">
-              <option value="pen" selected>Pen</option>
-              <option value="brush">Brush</option>
-            </select></label
-          >
-          <button id="photo" title="Photo">
-            <svg class="icon"><use href="#i-photo" /></svg>Add a photo
-          </button>
-          <input id="file" type="file" accept="image/*" hidden />
-          <button id="save">
-            <svg class="icon"><use href="#i-keep" /></svg>Save
-          </button>
-          <button id="export" title="Download">
-            <svg class="icon"><use href="#i-save" /></svg>Download
-          </button>
         </div>
       </div>
       <div id="caption" aria-live="polite"></div>
       <div id="acts">
-        <button id="brush" class="round" title="Paint with a brush">
-          <svg class="icon"><use href="#i-brush" /></svg>
-        </button>
-        <button id="type" class="round" title="Type">
-          <svg class="icon"><use href="#i-keys" /></svg>
-        </button>
-        <button id="clear" class="round" title="Clear">
+        <button id="new" class="round" title="Clear the drawing">
           <svg class="icon"><use href="#i-trash" /></svg>
         </button>
-        <button id="speak" class="round" title="Speak">
-          <svg class="icon"><use href="#i-mic" /></svg>
-        </button>
-        <button id="send" disabled>
-          <svg class="icon"><use href="#i-plane" /></svg><span>Send</span>
-        </button>
+        <!-- this site has no shelf of drawings; buttons.ts sets this button's state, so it is here, never shown -->
+        <button id="drawings" hidden></button>
       </div>
     </div>
     <!-- The words the sheet opens with, for readers that do not run the page's script or do not see its ink; about.ts
@@ -1290,7 +1378,12 @@
       <p>I'm now exploring new things at <a href="https://offpolicyinc.com/">Off Policy</a>.</p>
       <p>I have two wonderful kids and a wife that is much cooler than me.</p>
     </main>
-    <noscript><style>#about { position: static; width: auto; height: auto; clip-path: none; max-width: 760px; margin: 0 auto; padding: 24px 16px; } html, body { position: static; overflow: auto; }</style></noscript>
+    <noscript
+      ><style>
+        #about { position: static; width: auto; height: auto; clip-path: none; white-space: normal; max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+        html, body { position: static; overflow: auto; }
+      </style></noscript
+    >
     <script type="module" src="/draw/app.js"></script>
   </body>
 </html>

@@ -1,0 +1,518 @@
+/* The canvas's styles, which the build puts into each page that shows the canvas. */
+#sheet {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+/* the pointer over the sheet is the tool the person holds: the pen with its tip at the point, the eraser, or a hand */
+#sheet.pen {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6' stroke='white' stroke-width='4'/%3E%3Cpath d='M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8zM14 6.5l3.5 3.5M5.2 15.2l3.6 3.6' fill='white' stroke='%2344423d' stroke-width='1.8'/%3E%3C/svg%3E")
+      4 20,
+    crosshair;
+}
+#sheet.eraser {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5zM8 9.5l6.5 6.5M9 20.5h11' stroke='white' stroke-width='4'/%3E%3Cpath d='M9 20.5l-5-5a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L12 20.5zM8 9.5l6.5 6.5M9 20.5h11' fill='white' stroke='%2344423d' stroke-width='1.8'/%3E%3C/svg%3E")
+      6 18,
+    cell;
+}
+#sheet.hand {
+  cursor: grab;
+}
+#sheet.select {
+  cursor: default;
+}
+/* the circle the eraser rubs out, which follows the pointer while the person holds the eraser */
+#ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 1.5px solid #44423d;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+#ring[hidden] {
+  display: none;
+}
+#sheet.hand.held {
+  cursor: grabbing;
+}
+/* what lies over the sheet for the Select tool, placed in the window's pixels over boxes of the sheet; the layer
+   itself takes no pointer, so the pen draws through it */
+#frames {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#frames > div {
+  position: absolute;
+}
+#frames button {
+  position: absolute;
+  padding: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+/* what Select picked: a dashed frame, which moves it when dragged, with a knob that resizes it and a bin that deletes
+   it; the faint outline of what a press would pick, under a mouse; and the rectangle a drag on empty paper draws to
+   pick what it touches. The knob and the bin are small to see but large to touch */
+#frames .picked {
+  outline: 1.5px dashed #3e63dd;
+  outline-offset: 6px;
+  border-radius: 4px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+#frames .hover {
+  outline: 1.5px solid rgb(62 99 221 / 0.35);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
+#frames .band {
+  box-sizing: border-box;
+  border: 1.5px dashed #3e63dd;
+  border-radius: 4px;
+  background: rgb(62 99 221 / 0.06);
+}
+#frames .picked button {
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+}
+#frames .bin {
+  right: -22px;
+  top: -50px;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+#frames .bin.below {
+  top: auto;
+  bottom: -50px;
+}
+#frames .bin .icon {
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border: 1.5px solid #44423d;
+  border-radius: 50%;
+  background: #fffdf7;
+  box-shadow: 1.5px 1.5px 0 #44423d;
+}
+#frames .knob {
+  right: -28px;
+  bottom: -28px;
+  width: 44px;
+  height: 44px;
+  cursor: nwse-resize;
+}
+#frames .knob::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #3e63dd;
+  border-radius: 50%;
+  background: #fffdf7;
+}
+/* the stroke being drawn, on a canvas of its own over the sheet, so a stroke does not redraw the whole sheet */
+#live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* the tool in the agent's hand: its tip rides the line being revealed, held at a slant, rocking a little; it lifts
+   and glides to each new mark, and fades away when no ink is being drawn */
+#nib {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#nib.on {
+  opacity: 1;
+  transition: opacity 0.1s;
+}
+#nib.up {
+  transition:
+    transform 0.12s ease-out,
+    opacity 0.1s;
+}
+#nib svg {
+  position: absolute;
+  left: -2.4px;
+  top: -11.9px;
+  width: 76px;
+  height: 23.75px;
+  overflow: visible;
+  transform-origin: 2.4px 11.9px;
+  rotate: -38deg;
+  filter: drop-shadow(2px 3px 0 rgba(68, 66, 61, 0.25));
+  animation: rock 0.45s ease-in-out infinite alternate;
+  transition:
+    scale 0.12s,
+    filter 0.12s;
+}
+#nib.up svg {
+  scale: 1.15;
+  filter: drop-shadow(6px 8px 1px rgba(68, 66, 61, 0.2));
+}
+@keyframes rock {
+  from {
+    transform: rotate(-4deg);
+  }
+  to {
+    transform: rotate(3deg);
+  }
+}
+/* the animations' stickers, each over its place on the page: the layer lets presses through to the sheet, and only
+   the stickers take them */
+#stickers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#stickers .sticker {
+  position: absolute;
+  translate: -50% -50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  font-size: 17px;
+  line-height: 30px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+/* a sticker being dragged follows the pointer, from its place */
+#stickers .sticker.dragged {
+  margin: -15px 0 0 -15px;
+  translate: none;
+  cursor: grabbing;
+}
+/* a sticker whose animation runs */
+#stickers .sticker.on {
+  background: #dbe4fb;
+}
+/* an animation that failed */
+#stickers .off {
+  opacity: 0.4;
+}
+/* the two bars: only a thumb takes the pointer, so a stroke along the right or the bottom edge draws */
+.bar {
+  position: absolute;
+  pointer-events: none;
+}
+#bar {
+  right: 0;
+  top: 70px;
+  bottom: 96px;
+  width: 26px;
+}
+#barx {
+  bottom: 0;
+  left: 14px;
+  right: 26px;
+  height: 10px;
+}
+.bar div {
+  pointer-events: auto;
+  touch-action: none;
+  position: absolute;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+}
+#bar div {
+  right: 6px;
+  width: 10px;
+}
+#barx div {
+  bottom: 1px;
+  height: 8px;
+}
+.bar.held div {
+  background: rgba(0, 0, 0, 0.45);
+}
+#bar.held div {
+  width: 14px;
+}
+/* every button is a sticker of paper with a pencilled outline, labelled in a handwriting font */
+button {
+  font:
+    18px "Patrick Hand",
+    cursive;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 2px solid #44423d;
+  background: #fff;
+  color: #44423d;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.35;
+}
+/* a hand-drawn icon from the page's sprite, in the colour of the text around it, its lines made to wobble */
+.icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#wobble);
+}
+/* the tools: a small card at the bottom right, where a thumb reaches, in rows of icons, swatches and colours */
+/* the card stacks its rows from the bottom up, so that the bottom row stays still while the others open above it */
+#tools {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  padding: 6px;
+  border: 2px solid #44423d;
+  border-radius: 18px;
+  background: #fffdf7;
+  box-shadow: 4px 4px 0 #44423d;
+}
+#tools .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#tools .colors {
+  display: grid;
+  grid-template-columns: repeat(6, auto);
+  justify-content: space-between;
+}
+#tools button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: none;
+}
+#tools button.on {
+  border-color: #44423d;
+  background: #fff;
+}
+/* a line between groups in a row */
+#tools hr {
+  align-self: stretch;
+  width: 2px;
+  margin: 4px 2px;
+  border: none;
+  border-radius: 1px;
+  background: #d8d4ca;
+}
+/* the sizes, fade and colours show only while the blob of the pen's colour has opened them; they fit in the width
+   of the open bottom row, so that they never widen the card further */
+#tools:not(.open) .styles,
+#tools:not(.open) .colors,
+#tools:not(.wiping) .wiper {
+  display: none;
+}
+/* at rest the bottom row holds only Select, the hand, the pen, the eraser and the colour */
+#tools:not(.open) .more {
+  display: none;
+}
+/* the eraser's size: a slider between a small and a big dot */
+#tools .wiper {
+  gap: 8px;
+  padding: 4px 6px;
+}
+.wiper .dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid #44423d;
+  border-radius: 50%;
+}
+.wiper .dot.big {
+  width: 18px;
+  height: 18px;
+}
+#wiper {
+  flex: 1;
+  width: 0;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+#wiper::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#wiper::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#wiper::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -8px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+#wiper::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+/* a size: a squiggle as the pen would draw it, in its colour and width */
+.swatch {
+  display: block;
+  width: 26px;
+  height: 19px;
+}
+.swatch path {
+  fill: none;
+  stroke-linecap: round;
+}
+/* the fade: a slider whose track runs from clear at its left to the pen's colour, solid, at its right */
+#fader {
+  flex: 1;
+  width: 0; /* the fade takes the room the sizes leave, and adds none of its own */
+  margin: 0 4px;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+#fader::-webkit-slider-runnable-track {
+  height: 8px;
+  border: 1px solid #d8d4ca;
+  border-radius: 5px;
+  background: linear-gradient(90deg, transparent, var(--ink));
+}
+#fader::-moz-range-track {
+  height: 8px;
+  border: 1px solid #d8d4ca;
+  border-radius: 5px;
+  background: linear-gradient(90deg, transparent, var(--ink));
+}
+#fader::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+#fader::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+/* a colour, as a blob of paint */
+.blob {
+  display: block;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid #44423d;
+  border-radius: 52% 48% 55% 45% / 50% 55% 45% 50%;
+}
+/* the zoom, at the top left: the zoom in percent, which grows down over the sheet to show a slider, zoomed in at
+   the top and out at the bottom. In the row it takes only the room of the percent. */
+#zoom {
+  position: relative;
+  width: 64px;
+  height: 38px;
+  flex: none;
+}
+#lens {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  border-radius: 17px;
+  background: #fff; /* so that the slider shows over ink */
+  pointer-events: auto;
+}
+/* the percent keeps its height, so that it stays still while the slider opens under it */
+#zoom #zoomed {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 38px;
+  padding: 0;
+  font-size: 16px;
+}
+#slider {
+  position: relative;
+  height: 130px;
+}
+#slider[hidden] {
+  display: none;
+}
+/* the slider runs left to right, turned a quarter so that its left end, zoomed out, is at the bottom */
+#zoomer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 110px;
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+#zoomer::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#zoomer::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #44423d;
+}
+#zoomer::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -7px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}
+#zoomer::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #44423d;
+  border-radius: 50%;
+  background: #fff;
+}

@@ -1,17 +1,63 @@
 /**
  * How marks are drawn on a canvas: a line is the outline of each of its pieces, as wide at each point as the point
- * says, with round ends; a fill is the inside of its rings less what was rubbed out of it; and a brush mark is its
- * picture, painted by p5.brush, laid over what is under it. Works on the page's canvas and on an OffscreenCanvas in a worker, where a brush mark, which
- * p5.brush cannot paint there, is drawn plainly as a line or a fill.
+ * says, with round ends; a fill is the inside of its rings less what was rubbed out of it; a brush mark is its
+ * picture, painted by p5.brush, laid over what is under it; and a picture mark is its picture stretched over its
+ * corners. Works on the page's canvas and on an OffscreenCanvas in a worker, where a brush mark, which p5.brush cannot
+ * paint there, is drawn plainly as a line or a fill, and a picture mark, which the worker cannot decode, is not drawn.
+ *
+ * A picture is decoded from its data URL once, in the background, the first time it is drawn or decoded() is asked
+ * for it. Until then it is not drawn, and once it is, the function given to whenDecoded() is called so the page can
+ * draw again.
  */
 import type { Point } from "./api.ts";
 import { corners } from "./box.ts";
 import { picture } from "./brushpaint.ts";
 import { css } from "./constants.ts";
 import { type Look, mapper, thickness } from "./pose.ts";
-import { type BrushMark, type Cut, type LinePoint, type Mark, even, moved, movedLine } from "./sheet.ts";
+import {
+  type BrushMark,
+  type Cut,
+  type ImageMark,
+  type LinePoint,
+  type Mark,
+  even,
+  moved,
+  movedLine,
+  pictureCorners,
+} from "./sheet.ts";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+const bitmaps = new Map<string, ImageBitmap>(); // each picture decoded, by its data URL
+const decoding = new Map<string, Promise<void>>(); // each picture's decoding, started or finished, by its data URL
+let decodedOne = () => {}; // called when a picture finishes decoding
+
+/** Has `fn` called each time a picture finishes decoding, so that the page draws it. */
+export function whenDecoded(fn: () => void): void {
+  decodedOne = fn;
+}
+
+/** Resolves once every picture among the marks is decoded, or has failed to decode. */
+export async function decoded(marks: Mark[]): Promise<void> {
+  await Promise.all(marks.flatMap((m) => (m.kind === "image" ? [decode(m.src)] : [])));
+}
+
+// Returns the decoding of a picture, starting it the first time. A picture that fails to decode is never drawn.
+function decode(src: string): Promise<void> {
+  let d = decoding.get(src);
+  if (!d) {
+    d = fetch(src)
+      .then((r) => r.blob())
+      .then(createImageBitmap)
+      .then(
+        (b) => void bitmaps.set(src, b),
+        () => undefined,
+      )
+      .then(() => decodedOne());
+    decoding.set(src, d);
+  }
+  return d;
+}
 
 /**
  * Draws one mark on c, in page units under c's transform, as solid as the mark is, and as `look` says: moved,
@@ -23,6 +69,7 @@ export function draw(c: Ctx, m: Mark, look: Look = {}): void {
     drawn = look.drawn ?? 1;
   if (drawn <= 0 || (m.kind !== "line" && drawn < 1)) return;
   if (m.kind === "brush") return brushed(c, m, look);
+  if (m.kind === "image") return pictured(c, m, look);
   c.globalAlpha = (look.solid ?? 1) * m.opacity;
   if (m.kind === "fill") {
     const [rings, cuts] = to
@@ -82,6 +129,35 @@ function brushed(c: Ctx, m: BrushMark, look: Look): void {
       });
   }
   c.restore();
+}
+
+/**
+ * Draws a picture mark through the look's matrix: the picture's unit square is mapped onto its three corners, so it
+ * turns and skews with them. With cuts, it is laid on a layer of its own first and the cuts are taken out of the layer.
+ * A picture not yet decoded is not drawn, and starts decoding where the canvas can decode it.
+ */
+function pictured(c: Ctx, m: ImageMark, look: Look): void {
+  const bitmap = bitmaps.get(m.src);
+  if (!bitmap) return void (typeof fetch === "function" && decode(m.src));
+  const to = look.at && mapper(look.at),
+    thick = look.at ? thickness(look.at) : 1,
+    at = to ? (m.at.map(to) as ImageMark["at"]) : m.at,
+    cuts = to ? m.cuts.map((x) => moved(x, to, thick)) : m.cuts,
+    [[x0, y0], [x1, y1], [x2, y2]] = at;
+  const lay = (l: Ctx) => {
+    l.save();
+    l.transform(x1 - x0, y1 - y0, x2 - x0, y2 - y0, x0, y0);
+    l.drawImage(bitmap, 0, 0, 1, 1);
+    l.restore();
+  };
+  c.globalAlpha = (look.solid ?? 1) * m.opacity;
+  if (!cuts.length) lay(c);
+  else
+    layered(c, [pictureCorners(at)], 0, (l) => {
+      lay(l);
+      rubOut(l, cuts);
+    });
+  c.globalAlpha = 1;
 }
 
 // Takes the cuts out of what is on l.

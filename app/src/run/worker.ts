@@ -16,7 +16,8 @@ import { Sheet } from "../paint/sheet.ts";
 import { answer, expose, run, shut } from "../sandbox/lockdown.ts";
 import { sketch } from "../sketch/sketch.ts";
 import { script } from "./block.ts";
-import { disk, folderFunctions, seen } from "./files.ts";
+import { Given } from "../paint/read.ts";
+import { disk, folderFunctions, laid, seen } from "./files.ts";
 import type { Answer, Ask, Need, Viewed } from "./run.ts";
 
 const sheet = new Sheet();
@@ -49,8 +50,25 @@ const host = {
     void printed.push(values.map((v) => (typeof v === "string" ? v : JSON.stringify(v))).join(" ")),
   look: (peek: Peek) => void peeks.push(peek),
 };
-const { paint, inking } = painter(sheet, host),
-  drawing = sketch({ ...inking, view: paint.view });
+const { paint, inking } = painter(sheet, host);
+
+/** Lays a picture from the folder on the page, as image() is given it with the part of the moment; returns its ink's id. */
+async function image(given: object & { part?: string }): Promise<number> {
+  const g = new Given("image", given),
+    { src, width, height } = await laid(g.text("path")),
+    wide = g.num("width");
+  return inking.image({
+    src,
+    x: g.num("x"),
+    y: g.num("y"),
+    width: wide,
+    height: g.optional("height") ?? (wide * height) / width,
+    opacity: g.opacity(),
+    part: given.part,
+  });
+}
+
+const drawing = sketch({ ...inking, image, view: paint.view });
 shut();
 // The agent's code may take p5's names for its own values, as p5's global mode lets a sketch, but not the page's own
 // names. The page's erase, copy and print take the place of p5's.
@@ -60,7 +78,6 @@ expose(drawing.own, paint, folderFunctions(need), {
   look: (o?: { path?: unknown }) =>
     o && typeof o === "object" && "path" in o ? void looked.push(String(o.path)) : paint.look(o as object),
   pose: onlyInFrame("pose"),
-  play: onlyInFrame("play"),
 });
 
 /** Returns what block `n` of a call, which threw `e` after making `made`, is told. */

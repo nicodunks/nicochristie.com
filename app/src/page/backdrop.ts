@@ -4,8 +4,8 @@
  * that takes no touches. It lies on the paper, so it scrolls and zooms with the sheet, and it is the size it was drawn
  * at in the view the page opens on. It is no part of the drawing: the agent does not see it, and Download leaves it out.
  */
-import { OPEN } from "./state.ts";
-import { canvas, view } from "./view.ts";
+import { OPEN } from "../canvas/state.ts";
+import { canvas, view } from "../canvas/view.ts";
 
 const TILE = [704, 500], // whole cells, so the tile repeats without a seam
   CELL = [16, 20];

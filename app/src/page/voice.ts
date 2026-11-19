@@ -1,27 +1,36 @@
 /**
- * The person's voice. Speak starts a spoken note, and the browser's own speech recogniser (Safari and Chrome have one)
- * writes the person's words into it while they speak. The notes show at the bottom left, each as a chat bubble of its
- * words on one line, which a tap opens to all its words and an × that drops it. A note the agent has been given is
- * faded. The notes are a chat column three bubbles high with the newest at the bottom, and a swipe up on it shows the
- * older ones.
+ * The person's typed side of the conversation, at the bottom left: the keyboard button and the typing bar it opens. It
+ * also keeps the notes, each the words of one thing the person said, which go with the drawing. The notes are built as
+ * a column of bubbles above the swirl but never shown.
  *
- * A person can type a note instead of speaking it, for a desk or a quiet room. Type starts a note as Speak does, but
- * the note holds a box that the person types the words into. Enter ends the note and sends the turn, and Type again
- * ends the note without sending it. The agent is given a typed note exactly as it is given a spoken one.
+ * The keyboard button gives its place to the typing bar, a box to type in with Send at its right, and comes back when
+ * the box is left empty or Escape is pressed. Send, the
+ * page's one Send, shows only while the box holds words or a turn can be stopped. The composer counts as open while
+ * the person types or the box holds words. Enter or Send makes the words in the box a note and sends the turn.
  */
-import { say } from "./caption.ts";
-import { labelled } from "./icons.ts";
-import { type Note, session, spoken } from "./state.ts";
-import { ready } from "./tools.ts";
+import { session } from "../canvas/state.ts";
+import { spoken } from "./state.ts";
+import { ready } from "./buttons.ts";
+import { track } from "./track.ts";
 
 const strip = document.getElementById("notes")!;
-const speak = document.getElementById("speak")!;
-const type = document.getElementById("type")!;
+const box = document.getElementById("say") as HTMLInputElement;
 const send = document.getElementById("send") as HTMLButtonElement;
-let box: HTMLInputElement | null = null; // the box of the note being typed, while one is
+const composer = document.getElementById("composer")!;
+const typing = document.getElementById("typing")!;
+
+/** Marks the composer open while the person types or its box holds words, which shows the notes. */
+function fold(): void {
+  const open = document.activeElement === box || box.value !== "";
+  if (open && !composer.classList.contains("open")) track("composer_opened");
+  composer.classList.toggle("open", open);
+}
+fold();
+box.addEventListener("focus", fold);
+box.addEventListener("blur", fold);
 let shown = 0; // how many notes the column showed, so that it scrolls to the newest only when one is added
 
-/** Shows the notes as bubbles of their words. An open note shows all its words, and its × once the person has finished speaking it. */
+/** Shows the notes as bubbles of their words. An open note shows all its words, and its ×. */
 export function list(): void {
   strip.replaceChildren(
     ...spoken.notes.map((n) => {
@@ -29,25 +38,21 @@ export function list(): void {
         words = document.createElement("span"),
         drop = document.createElement("button");
       chip.className = ["note", n.sent && "sent", n.open && "open"].filter(Boolean).join(" ");
-      if (box && n === spoken.heard) {
-        chip.classList.add("typing");
-        chip.append(box);
-        return chip;
-      }
-      words.textContent = n.text || "Listening…";
+      words.textContent = n.text;
       chip.append(words);
       chip.addEventListener("click", () => {
         n.open = !n.open;
         list();
       });
       drop.textContent = "×";
+      drop.title = "Drop";
       drop.addEventListener("click", (e) => {
         e.stopPropagation();
         spoken.notes = spoken.notes.filter((x) => x !== n);
         list();
         ready();
       });
-      if (n.open && n !== spoken.heard) chip.append(drop);
+      if (n.open) chip.append(drop);
       return chip;
     }),
   );
@@ -56,97 +61,43 @@ export function list(): void {
   older();
 }
 
-// Fades the column's top while older notes are scrolled out of sight above it.
+// Fades the column's top while older notes are out of sight above it.
 const older = () => strip.classList.toggle("more", strip.scrollTop > 0);
 strip.addEventListener("scroll", older);
 
-// The recogniser stops when the person presses Speak again, and by itself after a long pause.
-interface Recogniser extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-}
-type Heard = Event & { results: ArrayLike<ArrayLike<{ transcript: string }>>; error?: string };
-const Made = window as unknown as Record<string, (new () => Recogniser) | undefined>;
-const Kind = Made.SpeechRecognition ?? Made.webkitSpeechRecognition;
-const ear = Kind ? new Kind() : null;
-if (ear) {
-  ear.continuous = ear.interimResults = true;
-  ear.lang = "en-US";
-  ear.addEventListener("result", (e) => {
-    const r = (e as Heard).results;
-    spoken.heard!.text = Array.from(r, (x) => x[0].transcript)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-    list();
-  });
-  ear.addEventListener("error", (e) => say(`Could not listen: ${(e as Heard).error}`));
-  ear.addEventListener("end", () => {
-    labelled(speak, "mic");
-    speak.title = "Speak";
-    speak.classList.remove("on");
-    ended();
-  });
-}
-
-/** Starts a new note, which is open while it is heard or typed. */
-function started(): void {
-  const heard: Note = { text: "", sent: false, open: true };
-  spoken.heard = heard;
-  spoken.notes.push(heard);
-  speak.toggleAttribute("disabled", Boolean(box));
-  type.toggleAttribute("disabled", !box);
-  say("");
+/** Makes the words in the box a note for the agent's next turn, and empties the box. */
+export function typed(): void {
+  const text = box.value.replace(/\s+/g, " ").trim();
+  box.value = spoken.draft = "";
+  fold();
+  if (!text) return;
+  spoken.notes.push({ text, sent: false, open: false });
   list();
   ready();
 }
 
-/** Ends the note being heard or typed, which closes to a bubble of its words. A note with no words is dropped. */
-function ended(): void {
-  if (!spoken.heard?.text) spoken.notes = spoken.notes.filter((n) => n !== spoken.heard);
-  else spoken.heard.open = false;
-  spoken.heard = null;
-  speak.removeAttribute("disabled");
-  type.removeAttribute("disabled");
-  list();
-  ready();
-}
+// The composer's buttons leave the box focused when pressed, so that on a phone the composer stays open under the finger.
+for (const b of document.querySelectorAll("#composer button, #field button"))
+  b.addEventListener("pointerdown", (e) => e.preventDefault());
 
-// Speak starts a note, and pressing it again ends the note.
-speak.addEventListener("click", () => {
-  if (!ear) return say("This browser cannot write down speech.");
-  if (spoken.heard) return ear.stop();
-  labelled(speak, "stop");
-  speak.title = "Stop";
-  speak.classList.add("on");
-  started();
-  ear.start();
+box.addEventListener("input", () => {
+  spoken.draft = box.value;
+  fold();
+  ready();
+});
+// Enter sends the turn, with the words typed as its note; Send itself takes the words in the box first. Enter never
+// stops a turn, as Send does while one is with the agent.
+box.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") return box.blur();
+  if (e.key !== "Enter" || e.isComposing) return;
+  e.preventDefault();
+  if (!send.disabled && !session.busy) send.click();
 });
 
-// Ends the note being typed, with the words in its box.
-function typed(): void {
-  spoken.heard!.text = box!.value.replace(/\s+/g, " ").trim();
-  box = null;
-  type.title = "Type";
-  type.classList.remove("on");
-  ended();
-}
-
-type.addEventListener("click", () => {
-  if (box) return typed();
-  box = document.createElement("input");
-  box.placeholder = "Tell it what to draw…";
-  box.enterKeyHint = "send"; // a phone's keyboard labels its Enter key Send
-  box.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || e.isComposing) return;
-    typed();
-    if (!session.busy) send.click();
-  });
-  type.title = "Stop typing";
-  type.classList.add("on");
-  started();
+// The keyboard button gives its place to the typing bar, with the box ready to type in; the button comes back when the
+// box is left empty.
+document.getElementById("keys")!.addEventListener("click", () => {
+  typing.classList.add("on");
   box.focus();
 });
+box.addEventListener("blur", () => box.value || typing.classList.remove("on"));
