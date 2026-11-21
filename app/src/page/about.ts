@@ -42,10 +42,10 @@ const PARAGRAPHS: { part: string; size: number; words: Stretch[] }[] = [
     part: "about.dunks",
     size: 22,
     words: [
-      "I used to ",
-      { text: "dunk basketballs professionally", to: "video", href: "https://www.youtube.com/watch?v=res17FLLcPM" },
-      ", and used to ",
-      { text: "jump higher than LeBron", to: "essay", href: "/how-i-learned-to-jump-higher-than-lebron-james.pdf" },
+      "Before that, I ",
+      { text: "dunked basketballs professionally", to: "video", href: "https://www.youtube.com/watch?v=res17FLLcPM" },
+      " and somehow ",
+      { text: "jumped higher than LeBron", to: "essay", href: "/how-i-learned-to-jump-higher-than-lebron-james.pdf" },
       ".",
     ],
   },
@@ -58,7 +58,7 @@ const PARAGRAPHS: { part: string; size: number; words: Stretch[] }[] = [
       ".",
     ],
   },
-  { part: "about.family", size: 22, words: ["I have two wonderful kids and a wife that is much cooler than me."] },
+  { part: "about.family", size: 22, words: ["Most importantly, I have two wonderful kids and a wife that is much cooler than me."] },
 ];
 
 /** Where each link's ink leads, by its part: links.ts opens it when the person taps the ink. */
