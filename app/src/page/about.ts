@@ -58,7 +58,7 @@ const PARAGRAPHS: { part: string; size: number; words: Stretch[] }[] = [
       ".",
     ],
   },
-  { part: "about.family", size: 22, words: ["Most importantly, I have two wonderful kids and a wife that is much cooler than me."] },
+  { part: "about.family", size: 22, words: ["I have two wonderful kids and a wife that is much cooler than me."] },
 ];
 
 /** Where each link's ink leads, by its part: links.ts opens it when the person taps the ink. */
@@ -66,7 +66,7 @@ export const LINKS: Record<string, string> = Object.fromEntries(
   PARAGRAPHS.flatMap((p) => p.words.flatMap((w) => (typeof w === "string" ? [] : [[`${p.part}.${w.to}`, w.href]]))),
 );
 
-const COLUMN = 760; // the most page units the column is wide, with its margins
+const COLUMN = 770; // the most page units the column is wide, with its margins: just wide enough for the LeBron line
 const MARGIN = 24; // the column's margin on each side, in page units
 const LIFT = 0.07; // how far above the middle of the view the words stand, as a share of the view's height
 const EM = 135; // the height of a line of handwriting in the units of hand.json, as hand.ts has it
